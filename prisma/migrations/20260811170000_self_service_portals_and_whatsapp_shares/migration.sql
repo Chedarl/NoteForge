@@ -27,26 +27,35 @@ END
 $$;
 
 -- The existing export bucket is private. Keep its previous ZIP support while
--- allowing the generated WhatsApp handoff PDFs and future CSV exports. The
--- upsert also makes a fresh production migration independent of demo seeding.
-INSERT INTO storage.buckets (
-  id,
-  name,
-  public,
-  file_size_limit,
-  allowed_mime_types
-)
-VALUES (
-  'note-exports',
-  'note-exports',
-  false,
-  52428800,
-  ARRAY['application/pdf', 'application/zip', 'text/csv']::text[]
-)
-ON CONFLICT (id) DO UPDATE
-SET public = EXCLUDED.public,
-    file_size_limit = EXCLUDED.file_size_limit,
-    allowed_mime_types = EXCLUDED.allowed_mime_types;
+-- allowing the generated WhatsApp handoff PDFs and future CSV exports. A plain
+-- PostgreSQL database (including CI) has no Supabase Storage schema, so execute
+-- the upsert only when that managed table exists.
+DO $$
+BEGIN
+  IF to_regclass('storage.buckets') IS NOT NULL THEN
+    EXECUTE $bucket$
+      INSERT INTO storage.buckets (
+        id,
+        name,
+        public,
+        file_size_limit,
+        allowed_mime_types
+      )
+      VALUES (
+        'note-exports',
+        'note-exports',
+        false,
+        52428800,
+        ARRAY['application/pdf', 'application/zip', 'text/csv']::text[]
+      )
+      ON CONFLICT (id) DO UPDATE
+      SET public = EXCLUDED.public,
+          file_size_limit = EXCLUDED.file_size_limit,
+          allowed_mime_types = EXCLUDED.allowed_mime_types
+    $bucket$;
+  END IF;
+END
+$$;
 
 -- CreateTable
 CREATE TABLE "ShareLink" (
@@ -130,7 +139,16 @@ ALTER TABLE "NoteTag" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "AuditLog" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "ShareLink" ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE "ShareLink" FROM anon, authenticated;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON TABLE "ShareLink" FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON TABLE "ShareLink" FROM authenticated';
+  END IF;
+END
+$$;
 
 -- A Supabase-managed event trigger keeps RLS enabled on newly created public
 -- tables. It does not need to be callable through PostgREST; remove those
