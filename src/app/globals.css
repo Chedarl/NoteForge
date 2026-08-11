@@ -20,9 +20,21 @@
 }
 
 body {
-  background: var(--color-paper);
+  background: linear-gradient(180deg, #f8fafc 0%, #f3f7fa 100%);
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(8, 127, 140, 0.22);
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Clinical text is read closely and often re-read. Give it room. */

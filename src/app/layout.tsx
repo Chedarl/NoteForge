@@ -7,6 +7,7 @@ export const metadata: Metadata = {
     "Controlled intake, verification and insight between therapists and clinical note production.",
   // This application is not for search engines. Ever.
   robots: { index: false, follow: false, nocache: true },
+  icons: { icon: "/brand/noteforge-logo.jpg" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

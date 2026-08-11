@@ -19,10 +19,22 @@ Read [SECURITY.md](SECURITY.md) first if you intend to put anything real into it
 3. **Connect** (top of the dashboard) gives you two connection strings:
    - `DATABASE_URL` — the **transaction pooler**, port 6543. Append `?pgbouncer=true`.
    - `DIRECT_URL` — the **session pooler**, port 5432. Migrations use this.
-4. **Authentication → Providers → Email**: turn off "Confirm email" for the pilot, or
-   confirm the seeded accounts by hand.
-5. **Authentication → Multi-Factor**: enable TOTP. Turn it on for your owner and
+4. **Authentication → URL Configuration**: set **Site URL** to the production Vercel
+   URL and add `https://your-app.vercel.app/auth/callback` to Redirect URLs.
+5. **Authentication → Providers → Email**: keep email confirmation on for public
+   self-signup. Invited users receive their own one-time setup link.
+6. **Authentication → Multi-Factor**: enable TOTP. Turn it on for your owner and
    specialist accounts.
+
+For Supabase's recommended server-side email flow, update the **Confirm signup** email
+template link to:
+
+```text
+{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email&next=/s
+```
+
+Set the invitation template to the same route with `type=invite&next=/set-password`.
+The application also supports Supabase's standard PKCE `/auth/callback` flow.
 
 The free tier gives 500 MB of database and 1 GB of storage. A photographed page after
 client-side downscaling is roughly 300–600 KB, so that is on the order of two thousand
@@ -40,7 +52,7 @@ npm install
 cp .env.example .env.local
 ```
 
-Fill in the six Supabase values, then generate the three secrets:
+Fill in the six Supabase values, then generate the four secrets:
 
 ```bash
 openssl rand -base64 48   # CONFIRM_LINK_SECRET
@@ -53,6 +65,11 @@ openssl rand -base64 32   # RATE_LIMIT_SALT
 database — if the database and the key are backed up together, the encryption has bought
 you nothing. Lose it and the names are unrecoverable; nothing else is affected, because
 every screen and every filename identifies clients by their practice code.
+
+Set `PLATFORM_ADMIN_EMAIL` to the exact address of the person who should control the
+platform. Do this before that person uses self-signup. This explicit allowlist prevents
+an unknown first visitor from claiming platform administration. `PDF_SHARE_TTL_HOURS`
+defaults to 24 and may be set from 1 to 168.
 
 Then:
 
@@ -74,6 +91,10 @@ submissions, and both private storage buckets. It is idempotent — run it again
    for the links in confirmation emails, and there is no reason to buy a domain for a
    pilot.
 3. Deploy.
+
+After deploying, visit `/signup` to create the first practice portal. The owner can then
+open **Team & settings** to invite clinicians and note specialists and save the default
+WhatsApp destination for PDF handoffs.
 
 `vercel.json` registers one daily cron for the staleness sweep. The Hobby plan allows two
 crons at daily granularity, which is exactly right here: status changes are a

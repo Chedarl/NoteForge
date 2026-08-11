@@ -1,0 +1,91 @@
+import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth/session";
+import { Card, Pill } from "@/components/shared/ui";
+import {
+  InviteUserForm,
+  UserStatusForm,
+  WhatsAppSettingsForm,
+  disciplineName,
+} from "@/components/specialist/PracticeSettingsForms";
+
+export const dynamic = "force-dynamic";
+
+export default async function SettingsPage() {
+  const owner = await requireRole(["OWNER"]);
+  const [practice, users] = await Promise.all([
+    prisma.practice.findUniqueOrThrow({ where: { id: owner.practiceId } }),
+    prisma.user.findMany({
+      where: { practiceId: owner.practiceId },
+      orderBy: [{ role: "asc" }, { fullName: "asc" }],
+    }),
+  ]);
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <p className="text-xs font-semibold tracking-[0.18em] text-indigo-600 uppercase">
+          Workspace administration
+        </p>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Team and delivery settings</h1>
+        <p className="mt-1 max-w-2xl text-sm text-slate-600">
+          Invite people into the correct portal, control their access, and choose where
+          completed intake PDFs are handed off.
+        </p>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="p-5">
+          <h2 className="font-semibold">WhatsApp handoff</h2>
+          <p className="mt-1 mb-5 text-sm text-slate-600">
+            Clinicians can override this per message; this is the convenient default.
+          </p>
+          <WhatsAppSettingsForm defaultPhone={practice.noteWriterWhatsApp ?? ""} />
+        </Card>
+        <Card className="p-5">
+          <h2 className="font-semibold">Invite a team member</h2>
+          <p className="mt-1 mb-5 text-sm text-slate-600">
+            They receive a secure email link, set their own password, then land in the
+            portal assigned to their role.
+          </p>
+          <InviteUserForm />
+        </Card>
+      </div>
+
+      <section>
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">People with access</h2>
+            <p className="mt-1 text-sm text-slate-600">Suspension takes effect on their next request.</p>
+          </div>
+          <Pill tone="sky">{users.length} accounts</Pill>
+        </div>
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="divide-y divide-slate-100">
+            {users.map((user) => (
+              <div key={user.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <div className="min-w-52 flex-1">
+                  <p className="text-sm font-semibold text-slate-900">{user.fullName}</p>
+                  <p className="text-xs text-slate-500">{user.email}</p>
+                </div>
+                <Pill tone={user.role === "OWNER" ? "sky" : "slate"}>
+                  {user.role.toLowerCase()}
+                </Pill>
+                <span className="min-w-36 text-xs text-slate-500">
+                  {disciplineName(user.discipline)}
+                </span>
+                <Pill tone={user.status === "ACTIVE" ? "emerald" : "rose"}>
+                  {user.status.toLowerCase()}
+                </Pill>
+                {user.id !== owner.id && user.role !== "OWNER" ? (
+                  <UserStatusForm userId={user.id} status={user.status} />
+                ) : (
+                  <span className="w-16 text-right text-xs text-slate-400">You</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
