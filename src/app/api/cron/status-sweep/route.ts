@@ -30,11 +30,15 @@ import { logSafe } from "@/lib/redact";
  */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
-  const authorized =
-    !secret ||
-    request.headers.get("authorization") === `Bearer ${secret}` ||
-    new URL(request.url).searchParams.get("key") === secret;
+  // Fail closed: a missing secret is a deployment error, never permission to run.
+  // Accept the secret only in the Authorization header so it cannot leak through
+  // URL logs, browser history, analytics or referrers.
+  if (!secret) {
+    logSafe("cron.status-sweep", "CRON_SECRET is not configured");
+    return NextResponse.json({ error: "Cron is not configured." }, { status: 503 });
+  }
 
+  const authorized = request.headers.get("authorization") === `Bearer ${secret}`;
   if (!authorized) return NextResponse.json({ error: "Not authorized." }, { status: 401 });
 
   const practices = await prisma.practice.findMany({
