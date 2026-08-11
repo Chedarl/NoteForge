@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { createAdminClient, BUCKET_EXPORTS } from "@/lib/supabase/admin";
-import { renderSubmissionPdf } from "@/lib/sharing/pdf";
+import { buildSubmissionPdf } from "@/lib/export/submissionPdf";
 import { normalizeWhatsAppNumber } from "@/lib/sharing/phone";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { siteUrl } from "@/lib/email/send";
@@ -63,26 +63,27 @@ export async function createWhatsAppShare(
     return { error: "Enter a WhatsApp number with its country code, or leave it blank." };
   }
 
+  /*
+   * One PDF generator, not two.
+   *
+   * This used to assemble its own data and call a separate renderer. Both the
+   * share link and the direct download now go through `buildSubmissionPdf`, so
+   * the document a note writer opens is byte-for-byte the same whichever way it
+   * reached them — and the §5 requirements (per-page footer, the changes-since-
+   * last-submission block, the embedded JSON) hold on both paths rather than
+   * only the one somebody remembered to update.
+   *
+   * Names stay off here. A share link travels further than a download does.
+   */
   let bytes: Uint8Array;
   try {
-    bytes = await renderSubmissionPdf({
-      practiceName: submission.practice.name,
-      clientCode: submission.client.clientCode,
-      clientInitials: submission.client.initials,
-      birthYear: submission.client.birthYear,
-      submittedBy: submission.submittedBy.fullName,
-      encounterDate: submission.encounterDate,
-      createdAt: submission.createdAt,
-      kind: submission.kind,
-      templateKind: submission.templateKind,
-      discipline: submission.discipline,
-      fields:
-        submission.fields && typeof submission.fields === "object" && !Array.isArray(submission.fields)
-          ? (submission.fields as Record<string, unknown>)
-          : {},
-      rawText: submission.rawText,
-      pages: submission.pages,
+    const built = await buildSubmissionPdf({
+      submissionId: submission.id,
+      practiceId: user.practiceId,
+      includeName: false,
     });
+    if (!built) return { error: "That submission is not available to share." };
+    bytes = new Uint8Array(built.pdf);
   } catch (error) {
     logSafe("share", "PDF generation failed", {
       submissionId,
@@ -95,6 +96,8 @@ export async function createWhatsAppShare(
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const ttlHours = shareTtlHours();
   const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
+  // Random path so the object key leaks nothing; the §5 filename rides on the
+  // download response instead.
   const key = `${user.practiceId}/shares/${randomUUID()}.pdf`;
   const storagePath = `${BUCKET_EXPORTS}/${key}`;
   const admin = createAdminClient();

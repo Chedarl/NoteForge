@@ -109,21 +109,38 @@ encounter types, so both formats can be written from one submission.
 | Soft warning on a likely duplicate | **DONE** — hash, ±3-day window, Jaccard and containment, then one model call. Produces a flag, never a merge |
 | Hard block when the client is Deceased or Discharged | **DONE** — server-side, at write time. The submission is kept, flagged and notified |
 
-## 5. PDF export — **critical**, **TO BUILD**
+## 5. PDF export — **critical**, **DONE**
 
-A ZIP of JSON and Markdown already exists (`src/lib/export/`) and covers most of the
-content requirements. The PDF itself is not built.
+`src/lib/export/pdf.tsx` renders it, `src/lib/export/submissionPdf.ts` assembles it from
+the database, and `/api/export/submission/[id]` serves it. The WhatsApp share link
+(§7a) renders through the same pair, so a note writer gets the identical document
+whichever way it reached them.
 
-Requirements: hierarchical structure with bold section headings · identical field labels
-every time · one logical block per section · client identifier and status prominent at the
-top · a called-out "changes since last submission" section · timestamp, professional name
-and role, and a unique submission ID **on every page** · no decorative clutter · real
-selectable text, never image-only · single column, or simple two-column · optionally an
-embedded or attached machine-readable JSON block.
+| Clause | Status |
+| --- | --- |
+| Hierarchical structure, bold section headings | **DONE** |
+| Identical field labels every time | **DONE** — headings come from `TEMPLATES`, the structure the intake form renders from, so there is one label to change rather than three |
+| One logical block per section | **DONE** — an unfilled section prints "Not recorded" rather than being dropped, so an absence stays distinguishable from an oversight |
+| Client identifier and status prominent at the top | **DONE** — running header on every page; a non-active status also gets a called-out banner |
+| Called-out "changes since last submission" | **DONE** — `src/lib/export/changes.ts` compares against the previous encounter and reports which sections moved. It does not say whether a change matters (§6) |
+| Timestamp, professional name and role, submission ID on every page | **DONE** — running footer, plus a page counter |
+| No decorative clutter | **DONE** |
+| Real selectable text, never image-only | **DONE** — standard PDF fonts, verified by extracting the text back out of a generated file |
+| Single column | **DONE** |
+| Embedded machine-readable JSON | **DONE** — attached as `submission.json`, keyed by template field id rather than by label |
+| Filename `[ClientID]_[YYYY-MM-DD]_[EncounterType]_[SubmissionID].pdf` | **DONE** — `[EncounterType]` is the template name until §3's encounter-type dropdown exists, then it becomes that |
+| Downloadable by the professional | **DONE** — on the confirmation screen after submitting |
+| Automatically available in the internal queue | **DONE** — on every queue row and on the client record |
 
-Filename: `[ClientID]_[YYYY-MM-DD]_[EncounterType]_[SubmissionID].pdf`
+Names are **off by default**, are an explicit `?names=1` opt-in, and are audited under a
+distinct action. A photographed submission whose transcript no person has verified prints
+an explanation rather than the machine's reading of it — an unverified transcript is not a
+record.
 
-Downloadable by the professional **and** automatically available in the internal queue.
+`npm run verify:pdf` renders the layout from synthetic data with no database, which is how
+the page-break and running-footer behaviour is checked. Use it: two failure modes in
+`@react-pdf/renderer` are completely silent, and both remove the footer while leaving lint,
+typecheck and build green. See the comments in `pdf.tsx`.
 
 ## 6. What the platform explicitly does NOT do
 
@@ -152,6 +169,44 @@ PDF export optimised for human and AI consumption.
 
 ---
 
+## 7a. The write-and-send path
+
+Added 2026-08-11, after the client reviewed the build and described a materially simpler
+product than the specification above: a clinician signs themselves up, types what they
+discussed in plain language, and the PDF reaches the note writer over WhatsApp
+immediately.
+
+| Clause | Status |
+| --- | --- |
+| Clinicians create their own accounts and log in | **DONE** — `/signup` |
+| One simple box: write what was discussed | **DONE** — `/t/write`, over the `NARRATIVE` template |
+| Carries the date **and time** of the encounter | **DONE** — `datetime-local`, defaulting to now |
+| Becomes a PDF immediately | **DONE** — built in the same request, not queued |
+| Sent over WhatsApp immediately | **DONE** — `src/lib/whatsapp/send.ts` sends the document to `Practice.noteWriterWhatsApp` via the Meta Cloud API. **Not exercised against the live API** — `graph.facebook.com` is refused by the build environment's egress policy |
+| The structured workspace stays | **DONE** — the queue, verification, duplicate detection and insights are untouched; this is an additional way in, not a replacement |
+
+The quick path is a thin surface over `submitEncounter`, deliberately. The status
+guardrail, duplicate detection, completeness gate and audit trail all still run — a
+"quick" path that skipped them would be a hole straight through the rule this product
+exists to enforce. Verified: a quick update against the seeded deceased client is refused,
+and the clinician's text is kept and flagged.
+
+### The delivery decision, recorded
+
+The client was told, and reaffirmed, that **Meta does not sign a business associate
+agreement covering WhatsApp**, and chose to send the document itself rather than only a
+link to it. That is their call and it is implemented as asked. What the code does to bound
+it:
+
+- Documents are identified by **client code only** unless the clinician ticks the name box
+  on that submission. Off by default, every time.
+- Nothing clinical goes in the message text — the caption is a client code and a date,
+  because a WhatsApp preview shows on a lock screen.
+- Every send is audited, and an identifiable send is a **distinct action** from a
+  de-identified one.
+- The tokenised, expiring `/share/[token]` link built alongside this remains available and
+  is the safer option; it is one setting away from being the only one.
+
 ## Outstanding, as one list
 
 1. Sectioned, role-driven intake forms with the §3 field lists, new field types
@@ -160,12 +215,16 @@ PDF export optimised for human and AI consumption.
 2. Common header: encounter type, modality, duration.
 3. Required "what has changed since last contact" field.
 4. Historical comparison surfaced to the clinician **before** they start typing.
-5. The PDF export, to the §5 specification.
-6. MFA enrolment and enforcement; session timeout.
-7. Optional full name behind an explicit PHI acknowledgement; an explicit safe-mode
+   `src/lib/export/changes.ts` already computes the comparison for the PDF; what is
+   missing is showing it at intake, which is where §4 says the value is.
+5. MFA enrolment and enforcement; session timeout.
+6. Optional full name behind an explicit PHI acknowledgement; an explicit safe-mode
    toggle.
-8. Draft autosave.
-9. "Processed" marking and an optional link to the final note version.
+7. Draft autosave.
+8. "Processed" marking and an optional link to the final note version.
+9. Inviting a colleague into an existing practice. A signup always creates a new one.
+
+Done since this list was written: the §5 PDF export and the §7a write-and-send path.
 
 ## Deployment status
 

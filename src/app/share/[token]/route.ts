@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { createAdminClient, BUCKET_EXPORTS } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit";
 import { logSafe } from "@/lib/redact";
+import { submissionPdfFilename } from "@/lib/export/submissionPdf";
+import { TEMPLATES } from "@/lib/intake/templates";
+import type { TemplateKind } from "@prisma/client";
 
 type ClaimedShare = {
   id: string;
@@ -11,6 +14,27 @@ type ClaimedShare = {
   submissionId: string;
   storagePath: string;
 };
+
+/** The §5 filename, rebuilt from the submission. Falls back if it has gone. */
+async function shareFilename(submissionId: string, practiceId: string): Promise<string> {
+  const submission = await prisma.submission.findFirst({
+    where: { id: submissionId, practiceId },
+    select: {
+      id: true,
+      encounterDate: true,
+      templateKind: true,
+      client: { select: { clientCode: true } },
+    },
+  });
+  if (!submission) return "noteforge-source.pdf";
+
+  return submissionPdfFilename({
+    clientCode: submission.client.clientCode,
+    encounterDate: submission.encounterDate.toISOString().slice(0, 10),
+    encounterType: TEMPLATES[submission.templateKind as TemplateKind].name,
+    submissionId: submission.id,
+  });
+}
 
 export async function GET(
   _request: Request,
@@ -54,12 +78,22 @@ export async function GET(
     entityLabel: share.submissionId,
   });
 
+  /*
+   * §5 names the file `[ClientID]_[date]_[EncounterType]_[SubmissionID].pdf`,
+   * and that has to hold on this route too — these filenames are meant to be
+   * split by a machine, and a note writer receiving `noteforge-source.pdf` for
+   * every client has to open each one to find out what it is. The stored object
+   * key stays random on purpose, so the name is rebuilt here rather than
+   * exposing the storage path.
+   */
+  const filename = await shareFilename(share.submissionId, share.practiceId);
+
   const bytes = await data.arrayBuffer();
   return new Response(bytes, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": 'attachment; filename="noteforge-source.pdf"',
+      "Content-Disposition": `attachment; filename="${filename}"`,
       "Content-Length": String(bytes.byteLength),
       "Cache-Control": "private, no-store, max-age=0",
       "Content-Security-Policy": "default-src 'none'; sandbox",

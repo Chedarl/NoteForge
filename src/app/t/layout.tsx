@@ -12,7 +12,9 @@ export default async function TherapistLayout({ children }: { children: React.Re
       <Nav
         items={[
           { href: "/t", label: "My clients" },
-          { href: "/t/new", label: "New note" },
+          // First, because it is the thing most clinicians open the app to do.
+          { href: "/t/write", label: "Write an update" },
+          { href: "/t/new", label: "Structured note" },
           { href: "/t/upload", label: "Photograph paper" },
           { href: "/t/insights", label: "Insights" },
           { href: "/t/profile", label: "Your discipline" },

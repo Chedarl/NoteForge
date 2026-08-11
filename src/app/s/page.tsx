@@ -200,6 +200,22 @@ export default async function Queue({
                       {submission.state === "IN_PROGRESS" ? "Continue note" : "Write note"}
                     </Link>
                   )}
+
+                  {/*
+                    §5: the PDF is available in the queue without anyone
+                    generating it. Plain anchor, not next/link — this is a file
+                    download from a route handler, not a client-side navigation,
+                    and prefetching it would render a PDF and write an audit row
+                    for every row the queue displays.
+                  */}
+                  <a
+                    href={`/api/export/submission/${submission.id}`}
+                    target="_blank"
+                    rel="noopener"
+                    className="font-medium text-slate-600 underline"
+                  >
+                    Download PDF
+                  </a>
                 </div>
               </Card>
             );
