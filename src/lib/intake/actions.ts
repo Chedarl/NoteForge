@@ -8,6 +8,7 @@ import { submitEncounter } from "@/lib/intake/submit";
 import { assessCompleteness, TEMPLATES } from "@/lib/intake/templates";
 import { writeAudit } from "@/lib/audit";
 import { changeClientStatus, StatusChangeError } from "@/lib/clients/status";
+import { templatesFor } from "@/lib/intake/disciplines";
 import type { TemplateKind, ClientStatus } from "@prisma/client";
 
 /**
@@ -29,7 +30,14 @@ export interface IntakeState {
 
 const intakeSchema = z.object({
   clientId: z.string().min(1),
-  templateKind: z.enum(["SOAP", "DAP", "BIRP", "NARRATIVE"]),
+  templateKind: z.enum([
+    "SOAP",
+    "DAP",
+    "BIRP",
+    "NARRATIVE",
+    "CASE_MANAGEMENT",
+    "NURSING",
+  ]),
   encounterDate: z.string().min(1),
 });
 
@@ -39,6 +47,15 @@ export async function submitStructuredNote(
 ): Promise<IntakeState> {
   const user = await requireRole(["THERAPIST", "OWNER"]);
 
+  // A submission with no discipline produces an export that cannot be turned
+  // into the right kind of note, so the door is shut until it is recorded.
+  if (!user.discipline) {
+    return {
+      error:
+        "Set your discipline before submitting — it decides what kind of note gets written from this. Go to Your discipline.",
+    };
+  }
+
   const parsed = intakeSchema.safeParse({
     clientId: formData.get("clientId"),
     templateKind: formData.get("templateKind"),
@@ -47,6 +64,9 @@ export async function submitStructuredNote(
   if (!parsed.success) return { error: "Choose a client, a template and the session date." };
 
   const templateKind = parsed.data.templateKind as TemplateKind;
+  if (!templatesFor(user.discipline).includes(templateKind)) {
+    return { error: "That template is not one of the ones available to your discipline." };
+  }
 
   const encounterDate = new Date(parsed.data.encounterDate);
   if (Number.isNaN(encounterDate.getTime())) return { error: "That session date is not valid." };

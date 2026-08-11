@@ -7,7 +7,7 @@ import { checkClientAcceptsSubmissions, STATUS_LABEL } from "@/lib/clients/guard
 import { contentHash, normalizeForCompare } from "@/lib/dedupe/normalize";
 import { detectDuplicates, persistFlags } from "@/lib/dedupe/detect";
 import { flattenFields } from "@/lib/intake/templates";
-import type { SubmissionKind, TemplateKind, User } from "@prisma/client";
+import type { Discipline, SubmissionKind, TemplateKind, User } from "@prisma/client";
 
 /**
  * The door. Every submission in this system comes through here.
@@ -35,6 +35,12 @@ export interface SubmitInput {
   fields: Record<string, string>;
   /** Free text for a narrative or the notes accompanying a photo set. */
   extraText?: string;
+  /**
+   * Stamped onto the row rather than joined from the user at read time, so a
+   * clinician changing discipline later cannot rewrite what an old encounter
+   * was. Falls back to the submitter's current discipline.
+   */
+  discipline?: Discipline | null;
 }
 
 export type SubmitResult =
@@ -66,6 +72,7 @@ export async function submitEncounter(input: SubmitInput): Promise<SubmitResult>
     submittedById: input.submittedBy.id,
     kind: input.kind,
     templateKind: input.templateKind,
+    discipline: input.discipline ?? input.submittedBy.discipline ?? null,
     encounterDate: input.encounterDate,
     fields: input.fields,
     rawText: text,

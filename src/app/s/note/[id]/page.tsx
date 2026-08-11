@@ -7,6 +7,8 @@ import { TEMPLATES } from "@/lib/intake/templates";
 import { StatusBadge, Pill } from "@/components/shared/ui";
 import NoteEditor from "@/components/specialist/NoteEditor";
 import FlagResolver from "@/components/specialist/FlagResolver";
+import { identityOf } from "@/lib/clients/identity";
+import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import type { TemplateKind } from "@prisma/client";
 
@@ -77,7 +79,13 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
           ← Queue
         </Link>
         <h1 className="text-lg font-semibold">{submission.client.clientCode}</h1>
+        <span className="text-sm text-slate-500">
+          {identityOf(submission.client).displayName ?? submission.client.initials}
+        </span>
         <StatusBadge status={submission.client.status} />
+        {submission.discipline ? (
+          <Pill tone="sky">{DISCIPLINE_LABEL[submission.discipline]}</Pill>
+        ) : null}
         <Pill>{template.name}</Pill>
         <span className="text-sm text-slate-500">
           Session {fmtDate(submission.encounterDate)} · from {submission.submittedBy.fullName}

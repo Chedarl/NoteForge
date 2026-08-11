@@ -6,6 +6,7 @@ import { Card, Pill, SectionTitle, StatusBadge } from "@/components/shared/ui";
 import StatusChanger from "@/components/therapist/StatusChanger";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { writeAudit } from "@/lib/audit";
+import { identityOf } from "@/lib/clients/identity";
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +62,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
         </Link>
         <h1 className="text-xl font-semibold tracking-tight">{client.clientCode}</h1>
         <span className="text-sm text-slate-500">
-          {client.initials}
+          {identityOf(client).displayName ?? client.initials}
           {client.birthYear ? ` · b. ${client.birthYear}` : ""}
         </span>
         <StatusBadge status={client.status} />

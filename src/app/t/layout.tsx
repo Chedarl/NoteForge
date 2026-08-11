@@ -15,6 +15,7 @@ export default async function TherapistLayout({ children }: { children: React.Re
           { href: "/t/new", label: "New note" },
           { href: "/t/upload", label: "Photograph paper" },
           { href: "/t/insights", label: "Insights" },
+          { href: "/t/profile", label: "Your discipline" },
         ]}
         current=""
         right={
@@ -24,6 +25,19 @@ export default async function TherapistLayout({ children }: { children: React.Re
           </form>
         }
       />
+      {user.discipline ? null : (
+        <div className="border-b border-amber-300 bg-amber-50">
+          <div className="mx-auto max-w-6xl px-4 py-2 text-sm text-amber-900">
+            Tell us whether you are a Social Case Worker, Nurse Practitioner or something
+            else before filing notes —{" "}
+            <a href="/t/profile" className="font-medium underline">
+              set your discipline
+            </a>
+            . It decides which template you get and what kind of note is written from your
+            submissions.
+          </div>
+        </div>
+      )}
       <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
     </div>
   );

@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { Card, EmptyState, Pill, StatusBadge } from "@/components/shared/ui";
 import { ageLabel, fmtDate } from "@/lib/utils";
+import { identityOf } from "@/lib/clients/identity";
+import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import type { Prisma, SubmissionState } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +59,17 @@ export default async function Queue({
       orderBy: { createdAt: "asc" },
       take: 100,
       include: {
-        client: { select: { id: true, clientCode: true, initials: true, status: true } },
+        client: {
+          select: {
+            id: true,
+            clientCode: true,
+            initials: true,
+            status: true,
+            givenNameEnc: true,
+            familyInitial: true,
+            birthYear: true,
+          },
+        },
         submittedBy: { select: { fullName: true } },
         flags: { where: { resolution: "OPEN" }, select: { id: true, kind: true, detail: true } },
         pages: { select: { id: true, verifiedText: true, ocrConfidence: true } },
@@ -130,9 +142,14 @@ export default async function Queue({
               <Card key={submission.id} className="space-y-2">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="font-medium">{submission.client.clientCode}</span>
-                  <span className="text-xs text-slate-500">{submission.client.initials}</span>
+                  <span className="text-xs text-slate-500">
+                    {identityOf(submission.client).displayName ?? submission.client.initials}
+                  </span>
                   <StatusBadge status={submission.client.status} />
-                  <Pill>{submission.templateKind}</Pill>
+                  {submission.discipline ? (
+                    <Pill tone="sky">{DISCIPLINE_LABEL[submission.discipline]}</Pill>
+                  ) : null}
+                  <Pill>{submission.templateKind.replace(/_/g, " ").toLowerCase()}</Pill>
                   <Pill tone={submission.kind === "PHOTO" ? "amber" : "slate"}>
                     {submission.kind === "PHOTO" ? "Photographed" : "Typed"}
                   </Pill>

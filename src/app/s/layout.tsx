@@ -13,6 +13,7 @@ export default async function SpecialistLayout({ children }: { children: React.R
         items={[
           { href: "/s", label: "Queue" },
           { href: "/s/clients", label: "Clients" },
+          { href: "/s/export", label: "Download" },
           { href: "/s/insights", label: "Insights" },
           { href: "/s/audit", label: "Audit" },
         ]}

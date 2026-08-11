@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth/session";
 import { Card, EmptyState, Pill, SectionTitle, StatusBadge } from "@/components/shared/ui";
 import { fmtDate, ageLabel } from "@/lib/utils";
 import StatusChanger from "@/components/therapist/StatusChanger";
+import { identityOf } from "@/lib/clients/identity";
 
 export const dynamic = "force-dynamic";
 
@@ -58,13 +59,19 @@ export default async function TherapistHome() {
           >
             Photograph paper
           </Link>
+          <Link
+            href="/t/clients/new"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium"
+          >
+            Add client
+          </Link>
         </div>
       </div>
 
       {clients.length === 0 ? (
         <EmptyState
-          title="No clients assigned to you yet"
-          body="The practice owner assigns clients. Once you have some, they appear here with their current status."
+          title="No clients yet"
+          body="Add the clients you see, then file notes against them. A client is a code, a first name and a surname initial — never a full identity."
         />
       ) : null}
 
@@ -77,7 +84,7 @@ export default async function TherapistHome() {
                 <div className="min-w-40">
                   <div className="font-medium">{client.clientCode}</div>
                   <div className="text-xs text-slate-500">
-                    {client.initials}
+                    {identityOf(client).displayName ?? client.initials}
                     {client.birthYear ? ` · b. ${client.birthYear}` : ""}
                   </div>
                 </div>
@@ -121,7 +128,9 @@ export default async function TherapistHome() {
               <Card key={client.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-slate-50">
                 <div className="min-w-40">
                   <div className="font-medium">{client.clientCode}</div>
-                  <div className="text-xs text-slate-500">{client.initials}</div>
+                  <div className="text-xs text-slate-500">
+                    {identityOf(client).displayName ?? client.initials}
+                  </div>
                 </div>
                 <StatusBadge status={client.status} />
                 <div className="max-w-md text-xs text-slate-500">

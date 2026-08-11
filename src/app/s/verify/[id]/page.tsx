@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import VerifyWorkspace from "@/components/specialist/VerifyWorkspace";
 import { StatusBadge } from "@/components/shared/ui";
+import { identityOf } from "@/lib/clients/identity";
 import { fmtDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,9 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
           ← Queue
         </Link>
         <h1 className="text-lg font-semibold">{submission.client.clientCode}</h1>
+        <span className="text-sm text-slate-500">
+          {identityOf(submission.client).displayName ?? submission.client.initials}
+        </span>
         <StatusBadge status={submission.client.status} />
         <span className="text-sm text-slate-500">
           Session {fmtDate(submission.encounterDate)} · from {submission.submittedBy.fullName}

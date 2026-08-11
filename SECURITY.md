@@ -28,14 +28,33 @@ So: **do not put identified protected health information into a free-tier deploy
 Rather than treat this as a blocker, the data model is built so that the free deployment
 is genuinely defensible for a pilot.
 
-**There is no name field.** A client is a practice-assigned code (`RVN-0142`), initials,
-and optionally a birth *year*. There is no `fullName` column, no date of birth, no
-address, no phone number, no email, no identifying number of any kind. The mapping from
-a code to a person lives in the practice's own EHR, where it already is and where it is
-already covered.
+**There is no full name and no date of birth.** A client is a practice-assigned code
+(`RVN-0142`), a first name, a surname *initial*, and optionally a birth *year*. There is
+no address, no phone number, no email, no identifying number of any kind. The mapping
+from a code to a full identity lives in the practice's own EHR, where it already is and
+where it is already covered.
 
-That is enough for a transcriber to be certain which record a note belongs to, and not
-enough to identify anyone from a database dump.
+**The first name is encrypted at the column level**, AES-256-GCM with a random IV per
+value, key in the application environment and never in the database
+(`src/lib/crypto/field.ts`). A leaked database password, a misconfigured backup, a
+support engineer with production access or a SQL injection that reaches
+`SELECT * FROM "Client"` all yield ciphertext. This was verified by dumping the table and
+grepping it for seeded names — nothing.
+
+Consequences worth knowing:
+
+- Names cannot be searched or sorted by the database. Accepted: finding a client is by
+  code, which is indexed and not sensitive; the name is for *confirming* the right one.
+- Without `FIELD_ENCRYPTION_KEY` set, names are refused rather than stored in plaintext.
+  Everything else works.
+- Lose the key and the names are gone — and nothing else is. No code, note, submission,
+  flag or audit row depends on them.
+
+**Exports do not include names by default.** The download is the moment material leaves
+the controlled environment. Names are an explicit checkbox, the UI states what it makes
+the bundle, and the audit trail records `export.downloaded_with_names` distinctly from
+`export.downloaded`, so "did an identifiable bundle leave the system, and when" has an
+answer.
 
 **Note text is still sensitive.** De-identification reduces exposure; it does not
 eliminate it. A session narrative can identify someone through its content alone. Treat
@@ -66,16 +85,22 @@ not for production caseloads.
 - **Rate limiting** — on login and on signed-URL minting. In-memory and therefore
   per-instance; see the note in `src/lib/security/rateLimit.ts` about what that does and
   does not buy you.
-- **Exports** — the only export is a CSV of operational counts and durations. No client,
-  no submission, no note text. Audited.
+- **Exports** — two, both staff-only, both audited, both rate limited.
+  - The metrics CSV is counts and durations: no client, no submission, no note text.
+  - The session bundle (`/api/export`) is the source material. Practice-scoped, so a
+    guessed client id from another tenant yields nothing. Names off by default, and the
+    audit row records the date range, the counts, and whether names were included.
 
 ## What is not implemented
 
 - Business Associate Agreements. Nothing in code can substitute.
 - Row-level security in Postgres. Isolation is enforced in the application layer. RLS
   would be defence in depth and is worth adding before production.
-- Encryption of note text at the column level. Supabase encrypts at rest at the volume
-  level; a compromised database credential still reads plaintext notes.
+- Encryption of *note text* at the column level. Client names are encrypted; the notes
+  themselves are not. Supabase encrypts at rest at the volume level, so a compromised
+  database credential still reads plaintext clinical narrative. This is the largest
+  remaining gap, and it is a bigger job than the name field was: note text is searched by
+  the duplicate detector, which encryption would break.
 - Retention and deletion schedules. The schema keeps everything forever, which is right
   for audit and wrong for data minimisation past the practice's retention period.
 - Separation of psychotherapy notes from progress notes as distinct record types. The
@@ -97,7 +122,10 @@ not for production caseloads.
 4. Add Postgres RLS policies mirroring the application's practice scoping.
 5. Add retention rules and a deletion path.
 6. Enforce MFA for every role, not just the staff ones.
-7. Get a lawyer to read this list and the code that implements it.
+7. Move `FIELD_ENCRYPTION_KEY` into a managed secret store with rotation, rather than a
+   Vercel environment variable. Rotation needs a re-encryption pass; the version prefix
+   (`v1:`) on every stored value exists so that pass can tell old from new.
+8. Get a lawyer to read this list and the code that implements it.
 
 ## Reporting a problem
 

@@ -11,7 +11,8 @@ import type { ClientStatus } from "@prisma/client";
 interface ClientOption {
   id: string;
   clientCode: string;
-  initials: string;
+  /** Name where one was recorded, otherwise initials. The code identifies. */
+  label: string;
   status: ClientStatus;
 }
 
@@ -100,7 +101,7 @@ export default function PhotoUpload({ clients }: { clients: ClientOption[] }) {
           >
             {clients.map((client) => (
               <option key={client.id} value={client.id}>
-                {client.clientCode} · {client.initials}
+                {client.clientCode} · {client.label}
                 {client.status !== "ACTIVE" ? ` — ${STATUS_LABEL[client.status]}` : ""}
               </option>
             ))}

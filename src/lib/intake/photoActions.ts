@@ -34,6 +34,13 @@ export async function submitPhotoPages(
 ): Promise<PhotoState> {
   const user = await requireRole(["THERAPIST", "OWNER"]);
 
+  if (!user.discipline) {
+    return {
+      error:
+        "Set your discipline before submitting — it decides what kind of note gets written from this. Go to Your discipline.",
+    };
+  }
+
   const clientId = String(formData.get("clientId") ?? "");
   const encounterDateRaw = String(formData.get("encounterDate") ?? "");
   const paths = formData.getAll("paths").map(String).filter(Boolean);

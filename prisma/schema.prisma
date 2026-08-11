@@ -21,13 +21,21 @@
 //      SECURITY.md for why that is a design decision and not an omission.
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // Needed so the trigram index on Submission.normalizedText can be declared in
+  // this file rather than hand-written into a migration. When it lives only in
+  // SQL, Prisma does not know it exists and every subsequent `migrate diff`
+  // proposes dropping it — which is exactly how a production index quietly
+  // disappears during an unrelated schema change.
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  // Ships with Supabase's Postgres, so this is an enable rather than an install.
+  extensions = [pg_trgm]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,6 +81,27 @@ enum UserStatus {
   SUSPENDED
 }
 
+/// What kind of clinician is writing.
+///
+/// This is not decoration. It travels on every submission and into every
+/// export, because the note that gets written downstream from a nurse
+/// practitioner's encounter is a different document from the one written from a
+/// social case worker's — different structure, different vocabulary, different
+/// things that must be present. Whatever writes those notes needs to be told
+/// which it is looking at, and the only place that can be recorded accurately
+/// is at the point the material is submitted.
+///
+/// It also selects which intake template a clinician is offered, so the right
+/// information is *collected* in the first place. An export cannot contain a
+/// medication review that nobody was ever asked for.
+enum Discipline {
+  SOCIAL_CASE_WORKER
+  NURSE_PRACTITIONER
+  THERAPIST
+  COUNSELLOR
+  OTHER
+}
+
 model User {
   id String @id @default(cuid())
 
@@ -84,6 +113,12 @@ model User {
   fullName   String
   role       UserRole
   status     UserStatus @default(ACTIVE)
+
+  /// Null until the clinician has said which they are. The portal asks on first
+  /// use and will not let a submission through without it, because a submission
+  /// with no discipline produces an export that cannot be turned into the right
+  /// kind of note.
+  discipline Discipline?
 
   practiceId String
   practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
@@ -135,6 +170,23 @@ model Client {
   /// Year only. A year plus initials plus a practice is a useful disambiguator;
   /// a full date of birth is a direct identifier, so it is not collected.
   birthYear  Int?
+
+  /// The client's first name, encrypted at the column level (AES-256-GCM, see
+  /// `src/lib/crypto/field.ts`). Ciphertext in the database, and ciphertext in
+  /// a backup or a stolen dump — the key lives in the application environment.
+  ///
+  /// Stored rather than derived because a caseload of two hundred people cannot
+  /// be told apart by initials alone, and a transcriber picking the wrong record
+  /// is the failure mode this whole product exists to prevent.
+  ///
+  /// Never searchable or sortable — that is the accepted cost of encrypting it.
+  /// Finding a client is done by `clientCode`, which is indexed and not
+  /// sensitive; the name is for *confirming* you have the right one.
+  givenNameEnc  String?
+  /// Surname initial only, in the clear. One letter is not an identifier and
+  /// keeping it readable makes "Maria D." renderable without a decrypt on every
+  /// row of a list.
+  familyInitial String?
 
   status            ClientStatus @default(ACTIVE)
   /// Why the status is what it is. Required by the app for any non-ACTIVE
@@ -231,6 +283,12 @@ enum TemplateKind {
   DAP
   BIRP
   NARRATIVE
+  /// Psychosocial case management: situation, needs, actions taken, referrals.
+  CASE_MANAGEMENT
+  /// Nursing/medical encounter: presentation, measures, assessment, medication,
+  /// plan. Kept separate from SOAP because the fields a nurse practitioner must
+  /// record — and therefore the fields the export must carry — are not the same.
+  NURSING
 }
 
 enum SubmissionState {
@@ -267,9 +325,20 @@ model Submission {
   templateKind TemplateKind    @default(SOAP)
   state        SubmissionState @default(RECEIVED)
 
-  /// When the session happened — not when it was uploaded. The gap between the
-  /// two is one of the numbers the insights dashboard reports, because a
-  /// fortnight-old encounter is a different quality of input from a same-day one.
+  /// Copied from the submitting user at write time, not joined at read time.
+  ///
+  /// Deliberately denormalised: a clinician's discipline can change, and a note
+  /// written from a 2026 encounter must carry the discipline that applied *then*.
+  /// Joining to the user would silently rewrite history the day somebody's role
+  /// is corrected.
+  discipline Discipline?
+
+  /// When the session happened — not when it was uploaded.
+  ///
+  /// This is the spine of the whole record. Every export is organised by it,
+  /// duplicate detection compares against it, and the gap between it and
+  /// `createdAt` is the handover-delay figure on the dashboard. A submission
+  /// cannot exist without one.
   encounterDate DateTime
 
   /// Structured template answers, keyed by field id. Empty for photo intake.
@@ -302,6 +371,13 @@ model Submission {
   @@index([practiceId, state, createdAt])
   @@index([clientId, encounterDate])
   @@index([practiceId, contentHash])
+  /// Backs the export, which is always "this client, these session dates".
+  @@index([practiceId, encounterDate])
+  /// Trigram index over the normalised text. Turns "has anyone already given us
+  /// this?" into a sub-second question rather than a table scan that gets slower
+  /// every week. GIN rather than GiST: the row is written once per encounter and
+  /// read on every intake, so the slower build buys the lookup speed we want.
+  @@index([normalizedText(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 /// One photographed page, its machine transcript, and the human-confirmed text.

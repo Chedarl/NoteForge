@@ -2,6 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import IntakeForm from "@/components/therapist/IntakeForm";
 import { EmptyState } from "@/components/shared/ui";
+import { identityOf } from "@/lib/clients/identity";
+import { templatesFor } from "@/lib/intake/disciplines";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -30,15 +33,35 @@ export default async function NewNotePage({
       status: true,
       statusReason: true,
       statusChangedAt: true,
+      givenNameEnc: true,
+      familyInitial: true,
+      birthYear: true,
     },
   });
 
-  if (clients.length === 0) {
+  if (!user.discipline) {
     return (
       <EmptyState
-        title="No clients assigned to you"
-        body="The practice owner assigns clients before notes can be filed."
+        title="Set your discipline first"
+        body="Which template you get, and what kind of note is written from your submissions, both depend on it. It takes one click on the Your discipline page."
       />
+    );
+  }
+
+  if (clients.length === 0) {
+    return (
+      <div className="max-w-2xl">
+        <EmptyState
+          title="No clients yet"
+          body="Add a client before filing notes against them."
+        />
+        <Link
+          href="/t/clients/new"
+          className="mt-4 inline-block rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+        >
+          Add a client
+        </Link>
+      </div>
     );
   }
 
@@ -49,7 +72,19 @@ export default async function NewNotePage({
         Typed notes reach the production queue immediately and are turned around faster than
         photographed paper — there is nothing to transcribe and nothing to verify.
       </p>
-      <IntakeForm clients={clients} preselectedClientId={preselected ?? ""} />
+      <IntakeForm
+        clients={clients.map((client) => ({
+          id: client.id,
+          clientCode: client.clientCode,
+          label: identityOf(client).displayName ?? client.initials,
+          status: client.status,
+          statusReason: client.statusReason,
+          statusChangedAt: client.statusChangedAt,
+        }))}
+        preselectedClientId={preselected ?? ""}
+        allowedTemplates={templatesFor(user.discipline)}
+        discipline={user.discipline}
+      />
     </div>
   );
 }

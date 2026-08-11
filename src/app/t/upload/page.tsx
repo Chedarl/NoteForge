@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import PhotoUpload from "@/components/therapist/PhotoUpload";
 import { readerConfigured } from "@/lib/ai/reader";
+import { identityOf } from "@/lib/clients/identity";
+import { EmptyState } from "@/components/shared/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +16,25 @@ export default async function UploadPage() {
       ...(user.role === "THERAPIST" ? { primaryTherapistId: user.id } : {}),
     },
     orderBy: [{ status: "asc" }, { clientCode: "asc" }],
-    select: { id: true, clientCode: true, initials: true, status: true },
+    select: {
+      id: true,
+      clientCode: true,
+      initials: true,
+      status: true,
+      givenNameEnc: true,
+      familyInitial: true,
+      birthYear: true,
+    },
   });
+
+  if (!user.discipline) {
+    return (
+      <EmptyState
+        title="Set your discipline first"
+        body="It is stamped on every submission and decides what kind of note is written from it. One click on the Your discipline page."
+      />
+    );
+  }
 
   return (
     <div className="max-w-3xl">
@@ -29,7 +48,14 @@ export default async function UploadPage() {
           ? "Pages are transcribed automatically and then checked by a person before anything is typed up."
           : "Automatic transcription is not configured on this deployment, so pages will be typed by hand. Everything else works exactly the same."}
       </p>
-      <PhotoUpload clients={clients} />
+      <PhotoUpload
+        clients={clients.map((client) => ({
+          id: client.id,
+          clientCode: client.clientCode,
+          label: identityOf(client).displayName ?? client.initials,
+          status: client.status,
+        }))}
+      />
     </div>
   );
 }

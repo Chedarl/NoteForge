@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { Card, StatusBadge } from "@/components/shared/ui";
 import { fmtDate, ageLabel } from "@/lib/utils";
+import { identityOf } from "@/lib/clients/identity";
 
 export const dynamic = "force-dynamic";
 
@@ -20,12 +21,21 @@ export default async function ClientsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Client registry</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          {clients.length} clients. Identity is deliberately minimal — a practice code,
-          initials and a birth year. No names are held here.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Client registry</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            {clients.length} clients. Identity is deliberately minimal — a practice code, a
+            first name encrypted at rest, a surname initial and a birth year. No full names,
+            no dates of birth.
+          </p>
+        </div>
+        <Link
+          href="/s/clients/new"
+          className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
+        >
+          Add client
+        </Link>
       </div>
 
       <div className="space-y-2">
@@ -35,7 +45,7 @@ export default async function ClientsPage() {
               {client.clientCode}
             </Link>
             <span className="text-xs text-slate-500">
-              {client.initials}
+              {identityOf(client).displayName ?? client.initials}
               {client.birthYear ? ` · b. ${client.birthYear}` : ""}
             </span>
             <StatusBadge status={client.status} />

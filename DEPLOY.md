@@ -44,9 +44,15 @@ Fill in the six Supabase values, then generate the three secrets:
 
 ```bash
 openssl rand -base64 48   # CONFIRM_LINK_SECRET
+openssl rand -base64 48   # FIELD_ENCRYPTION_KEY   <- back this one up separately
 openssl rand -base64 32   # CRON_SECRET
 openssl rand -base64 32   # RATE_LIMIT_SALT
 ```
+
+`FIELD_ENCRYPTION_KEY` encrypts client first names. Keep a copy somewhere that is not the
+database — if the database and the key are backed up together, the encryption has bought
+you nothing. Lose it and the names are unrecoverable; nothing else is affected, because
+every screen and every filename identifies clients by their practice code.
 
 Then:
 

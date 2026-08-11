@@ -132,6 +132,109 @@ export const TEMPLATES: Record<TemplateKind, Template> = {
       },
     ],
   },
+
+  /**
+   * Social case work.
+   *
+   * Built around what a case management note has to be able to evidence:
+   * what the situation is, what was done about it, who else is now involved,
+   * and when it is next being looked at. "Actions taken" is required and
+   * separate from "plan" on purpose — a case note that records intentions but
+   * not actions cannot demonstrate that anything happened.
+   */
+  CASE_MANAGEMENT: {
+    kind: "CASE_MANAGEMENT",
+    name: "Case management",
+    description: "Situation, needs, actions taken, referrals, plan.",
+    fields: [
+      {
+        id: "situation",
+        label: "Situation",
+        hint: "Current circumstances — housing, income, family, health, safety. What has changed since last contact.",
+        required: true,
+        rows: 5,
+      },
+      {
+        id: "needs",
+        label: "Needs identified",
+        hint: "What the client needs, in their own framing where possible, and how urgent each is.",
+        required: true,
+        rows: 4,
+      },
+      {
+        id: "actions",
+        label: "Actions taken",
+        hint: "What you actually did this contact — calls made, forms submitted, advocacy, support provided.",
+        required: true,
+        rows: 4,
+      },
+      {
+        id: "referrals",
+        label: "Referrals and coordination",
+        hint: "Agencies contacted or involved, and what each is now responsible for. Write 'none' if none.",
+        required: true,
+        rows: 3,
+      },
+      {
+        id: "plan",
+        label: "Plan and next contact",
+        hint: "Next steps, who owns each, and when you are seeing or calling them again.",
+        required: true,
+        rows: 4,
+      },
+    ],
+  },
+
+  /**
+   * Nurse practitioner encounters.
+   *
+   * Medication is its own required field rather than a line inside the plan.
+   * It is the single most consequential thing in a nursing note to get wrong or
+   * lose, and burying it in prose is how it gets missed by whatever writes the
+   * final note — the export can only carry a field that exists.
+   */
+  NURSING: {
+    kind: "NURSING",
+    name: "Nursing encounter",
+    description: "Presentation, observations, assessment, medication, plan.",
+    fields: [
+      {
+        id: "presentation",
+        label: "Presenting concern",
+        hint: "Why the client was seen, and what they reported — symptoms, duration, how it is affecting them.",
+        required: true,
+        rows: 5,
+      },
+      {
+        id: "observations",
+        label: "Observations and measures",
+        hint: "Vitals, screening scores, physical findings. Record the actual figures, not 'within normal limits'.",
+        required: true,
+        rows: 4,
+      },
+      {
+        id: "assessment",
+        label: "Assessment",
+        hint: "Your clinical impression, and any differential you are holding open.",
+        required: true,
+        rows: 4,
+      },
+      {
+        id: "medication",
+        label: "Medication",
+        hint: "Current medication, anything started, stopped or changed today, with doses. Write 'no change' if nothing changed.",
+        required: true,
+        rows: 3,
+      },
+      {
+        id: "plan",
+        label: "Plan and follow-up",
+        hint: "Investigations, referrals, safety-netting advice given, and when they are being seen again.",
+        required: true,
+        rows: 4,
+      },
+    ],
+  },
 };
 
 export const TEMPLATE_LIST: Template[] = Object.values(TEMPLATES);

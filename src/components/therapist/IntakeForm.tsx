@@ -3,16 +3,18 @@
 import { useActionState, useMemo, useState } from "react";
 import Link from "next/link";
 import { submitStructuredNote, type IntakeState } from "@/lib/intake/actions";
-import { TEMPLATE_LIST, TEMPLATES } from "@/lib/intake/templates";
+import { TEMPLATES } from "@/lib/intake/templates";
+import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import Dictate from "@/components/therapist/Dictate";
 import { StatusBadge } from "@/components/shared/ui";
-import type { ClientStatus, TemplateKind } from "@prisma/client";
+import type { ClientStatus, Discipline, TemplateKind } from "@prisma/client";
 
 interface ClientOption {
   id: string;
   clientCode: string;
-  initials: string;
+  /** "Maria D." where a name was recorded, otherwise initials. Never the identifier. */
+  label: string;
   status: ClientStatus;
   statusReason: string | null;
   statusChangedAt: Date;
@@ -36,12 +38,17 @@ interface ClientOption {
 export default function IntakeForm({
   clients,
   preselectedClientId,
+  allowedTemplates,
+  discipline,
 }: {
   clients: ClientOption[];
   preselectedClientId: string;
+  /** Templates for this clinician's discipline, most appropriate first. */
+  allowedTemplates: TemplateKind[];
+  discipline: Discipline;
 }) {
   const [clientId, setClientId] = useState(preselectedClientId || clients[0]?.id || "");
-  const [templateKind, setTemplateKind] = useState<TemplateKind>("SOAP");
+  const [templateKind, setTemplateKind] = useState<TemplateKind>(allowedTemplates[0]);
   const [state, formAction, pending] = useActionState<IntakeState, FormData>(
     submitStructuredNote,
     {}
@@ -92,7 +99,7 @@ export default function IntakeForm({
         >
           {clients.map((client) => (
             <option key={client.id} value={client.id}>
-              {client.clientCode} · {client.initials}
+              {client.clientCode} · {client.label}
               {client.status !== "ACTIVE" ? ` — ${STATUS_LABEL[client.status]}` : ""}
             </option>
           ))}
@@ -129,12 +136,16 @@ export default function IntakeForm({
             onChange={(e) => setTemplateKind(e.target.value as TemplateKind)}
             className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
           >
-            {TEMPLATE_LIST.map((t) => (
-              <option key={t.kind} value={t.kind}>
-                {t.name} — {t.description}
+            {allowedTemplates.map((kind) => (
+              <option key={kind} value={kind}>
+                {TEMPLATES[kind].name} — {TEMPLATES[kind].description}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Filed as {DISCIPLINE_LABEL[discipline]}. That is recorded on this note and
+            travels with it, so the right kind of note gets written from it.
+          </p>
         </div>
 
         <div>
