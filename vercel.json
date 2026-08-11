@@ -2,7 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "comment": "Daily staleness sweep. One cron, daily — the free tier allows two at daily granularity, and status changes are a human-timescale event that nobody answers faster if asked hourly.",
       "path": "/api/cron/status-sweep",
       "schedule": "0 7 * * *"
     }
