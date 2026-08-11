@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/**
+ * A deliberately quiet interface.
+ *
+ * This is looked at all day by someone typing clinical notes, and read on a
+ * phone by a clinician between sessions. Colour is reserved for meaning —
+ * a client's status, a flag, a blocked submission — so that when something is
+ * coloured it is worth looking at. Everything else is ink on paper.
+ */
+
+@theme {
+  --color-ink: oklch(0.22 0.01 260);
+  --color-paper: oklch(0.99 0.002 260);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Clinical text is read closely and often re-read. Give it room. */
+.prose-note {
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+
+/* Confidence shading for OCR blocks. The scale is intentionally coarse —
+   a typist needs "look here" and "this is fine", not a heat map. */
+.ocr-low {
+  background: oklch(0.96 0.06 55);
+  border-left: 3px solid oklch(0.72 0.15 55);
+}
+.ocr-mid {
+  background: oklch(0.98 0.03 95);
+  border-left: 3px solid oklch(0.85 0.09 95);
+}
+.ocr-high {
+  border-left: 3px solid oklch(0.9 0.02 260);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

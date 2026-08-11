@@ -1,0 +1,18 @@
+node_modules
+.next
+out
+build
+.DS_Store
+*.pem
+
+# Local env files — these hold database credentials and service keys.
+.env
+.env*.local
+
+.vercel
+next-env.d.ts
+*.tsbuildinfo
+
+# Never commit anything that could be a real note or a real photograph.
+/uploads
+/samples-private
