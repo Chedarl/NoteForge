@@ -1,0 +1,521 @@
+// NoteForge — data model
+//
+// Read this file top to bottom and you have the whole product. Three ideas
+// carry it:
+//
+//   1. A Client is a *lifecycle*, not a row. Status changes, and the moment it
+//      stops being ACTIVE nothing new may be written against it. That is
+//      enforced in `src/lib/clients/guard.ts`, but the shape that makes it
+//      enforceable lives here: a status on the client, an append-only event log
+//      beside it, and a foreign key from every Submission to the client it
+//      claims to be about.
+//
+//   2. A Submission is what a therapist *hands over* and a Note is what we
+//      *produce*. Keeping them as separate rows is what makes turnaround
+//      measurable, duplicate detection possible, and the audit answerable —
+//      "what did they actually give us" and "what did we write" are different
+//      questions and a single table cannot answer both.
+//
+//   3. Identity is minimised on purpose. There is no `fullName` and no full
+//      date of birth. A client is a practice-assigned code and initials. See
+//      SECURITY.md for why that is a design decision and not an omission.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenancy and people
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// One therapy practice. Every other row in the database carries a practiceId
+/// and every query filters on it, because the alternative — remembering to
+/// filter — is how one practice ends up reading another's clients.
+model Practice {
+  id        String   @id @default(cuid())
+  name      String
+  /// Short slug used in client codes, e.g. "RVN" -> RVN-0142.
+  code      String   @unique
+  /// Hours we promise to turn a submission around in. Drives queue urgency and
+  /// the on-time figure in the insights dashboard.
+  slaHours  Int      @default(48)
+  /// How many days of silence before the daily sweep asks a therapist to
+  /// confirm a client is still active.
+  staleDays Int      @default(60)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users               User[]
+  clients             Client[]
+  submissions         Submission[]
+  notes               Note[]
+  auditLogs           AuditLog[]
+  statusConfirmations StatusConfirmation[]
+}
+
+enum UserRole {
+  /// Runs the NoteForge account. Sees everything in the practice, manages users.
+  OWNER
+  /// Your data-entry team. Verifies transcripts, produces and signs notes.
+  SPECIALIST
+  /// The clinician. Submits encounters, sees only their own clients.
+  THERAPIST
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+model User {
+  id String @id @default(cuid())
+
+  /// Supabase Auth user id. Authentication is Supabase's job; authorization is
+  /// this row's job, re-read on every request so suspending an account takes
+  /// effect immediately rather than at the next login.
+  authUserId String     @unique
+  email      String     @unique
+  fullName   String
+  role       UserRole
+  status     UserStatus @default(ACTIVE)
+
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clients             Client[]             @relation("PrimaryTherapist")
+  submissions         Submission[]         @relation("SubmittedBy")
+  verifiedPages       SubmissionPage[]     @relation("VerifiedBy")
+  resolvedFlags       SubmissionFlag[]     @relation("ResolvedBy")
+  authoredNotes       Note[]               @relation("AuthoredBy")
+  signedNotes         Note[]               @relation("SignedBy")
+  statusEvents        ClientStatusEvent[]  @relation("StatusChangedBy")
+  clientsLastTouched  Client[]             @relation("ClientStatusChangedBy")
+  statusConfirmations StatusConfirmation[] @relation("ConfirmationTherapist")
+  auditLogs           AuditLog[]
+
+  @@index([practiceId, role])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clients and the status lifecycle
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ClientStatus {
+  ACTIVE
+  ON_HOLD
+  DISCHARGED
+  TRANSFERRED
+  DECEASED
+}
+
+/// The master client record.
+///
+/// Deliberately thin on identity: a practice-assigned code, initials, and a
+/// birth *year* at most. That is enough for a typist to be certain which person
+/// a note belongs to and not enough to identify anyone from a database dump.
+model Client {
+  id String @id @default(cuid())
+
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  /// Human-facing identifier, unique within the practice. This is what appears
+  /// on the paper the therapist photographs.
+  clientCode String
+  initials   String
+  /// Year only. A year plus initials plus a practice is a useful disambiguator;
+  /// a full date of birth is a direct identifier, so it is not collected.
+  birthYear  Int?
+
+  status            ClientStatus @default(ACTIVE)
+  /// Why the status is what it is. Required by the app for any non-ACTIVE
+  /// status — "discharged" with no reason is how a record becomes unauditable.
+  statusReason      String?
+  statusChangedAt   DateTime     @default(now())
+  statusChangedById String?
+  statusChangedBy   User?        @relation("ClientStatusChangedBy", fields: [statusChangedById], references: [id], onDelete: SetNull)
+
+  primaryTherapistId String?
+  primaryTherapist   User?   @relation("PrimaryTherapist", fields: [primaryTherapistId], references: [id], onDelete: SetNull)
+
+  /// Denormalised for the staleness sweep and the engagement metric. Written
+  /// whenever a submission is accepted.
+  lastEncounterAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  statusEvents        ClientStatusEvent[]
+  submissions         Submission[]
+  notes               Note[]
+  statusConfirmations StatusConfirmation[]
+
+  @@unique([practiceId, clientCode])
+  @@index([practiceId, status])
+  @@index([practiceId, primaryTherapistId])
+}
+
+/// Append-only history of every status transition. Nothing updates or deletes a
+/// row here. This table is the answer to "when did we find out, and who told
+/// us" — the question that started this whole project.
+model ClientStatusEvent {
+  id String @id @default(cuid())
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  fromStatus ClientStatus?
+  toStatus   ClientStatus
+  reason     String?
+  /// How we learned: THERAPIST_UPDATE, CONFIRMATION_SWEEP, ADMIN, SEED.
+  source     String
+
+  changedById String?
+  changedBy   User?   @relation("StatusChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+}
+
+/// A periodic "is this client still active?" question, sent to the therapist
+/// who owns the client after a configurable stretch of silence.
+model StatusConfirmation {
+  id String @id @default(cuid())
+
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  therapistId String
+  therapist   User   @relation("ConfirmationTherapist", fields: [therapistId], references: [id], onDelete: Cascade)
+
+  /// Status at the moment we asked, so a late reply cannot silently overwrite a
+  /// change somebody made in the meantime.
+  askedStatus ClientStatus
+  respondedAt DateTime?
+  /// What they said: CONFIRMED_ACTIVE, or the new status they picked.
+  response    String?
+
+  createdAt DateTime @default(now())
+
+  @@index([practiceId, respondedAt])
+  @@index([clientId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Intake
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SubmissionKind {
+  /// Typed into the portal against a template. The path we want people on.
+  STRUCTURED
+  /// Photographs of handwritten paper. The path that exists because people
+  /// will keep doing it.
+  PHOTO
+}
+
+enum TemplateKind {
+  SOAP
+  DAP
+  BIRP
+  NARRATIVE
+}
+
+enum SubmissionState {
+  /// Accepted, nothing done to it yet.
+  RECEIVED
+  /// Has photo pages whose transcript a human has not confirmed.
+  NEEDS_VERIFY
+  /// Verified (or born structured) and waiting for a specialist.
+  QUEUED
+  /// A specialist has it open.
+  IN_PROGRESS
+  /// A signed note exists.
+  DONE
+  /// Refused at the door — the client is not accepting submissions.
+  BLOCKED
+  /// Resolved as a duplicate of, or superseded by, another submission.
+  SUPERSEDED
+}
+
+/// One encounter as handed over by a therapist.
+model Submission {
+  id String @id @default(cuid())
+
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  submittedById String
+  submittedBy   User   @relation("SubmittedBy", fields: [submittedById], references: [id], onDelete: Restrict)
+
+  kind         SubmissionKind
+  templateKind TemplateKind    @default(SOAP)
+  state        SubmissionState @default(RECEIVED)
+
+  /// When the session happened — not when it was uploaded. The gap between the
+  /// two is one of the numbers the insights dashboard reports, because a
+  /// fortnight-old encounter is a different quality of input from a same-day one.
+  encounterDate DateTime
+
+  /// Structured template answers, keyed by field id. Empty for photo intake.
+  fields  Json   @default("{}")
+  /// Free text as given. For a photo submission this is filled from the verified
+  /// page transcripts once a human confirms them.
+  rawText String @default("")
+
+  /// sha256 of the normalised text. Exact match is a certain duplicate and
+  /// costs one index lookup, so it runs before anything cleverer.
+  contentHash    String
+  /// Deduplicated, stopword-stripped tokens, space-joined. Backs the Jaccard
+  /// comparison in `src/lib/dedupe/similarity.ts` and the pg_trgm index.
+  normalizedText String @default("")
+
+  /// Set when this submission was resolved as a duplicate or an update of an
+  /// earlier one. The earlier row is never deleted.
+  supersedesId String?
+  supersedes   Submission?  @relation("Supersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy Submission[] @relation("Supersedes")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pages        SubmissionPage[]
+  flags        SubmissionFlag[] @relation("FlagSubject")
+  relatedFlags SubmissionFlag[] @relation("FlagRelated")
+  note         Note?
+
+  @@index([practiceId, state, createdAt])
+  @@index([clientId, encounterDate])
+  @@index([practiceId, contentHash])
+}
+
+/// One photographed page, its machine transcript, and the human-confirmed text.
+///
+/// Both are kept. The raw OCR output is what an auditor needs to see when
+/// asking whether a transcription error came from the machine or the person.
+model SubmissionPage {
+  id String @id @default(cuid())
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  pageNumber  Int
+  /// `bucket/key` in Supabase Storage. Never a URL — the bucket is private and
+  /// reads go through the role-gated media route.
+  storagePath String
+
+  /// Raw reader output, exactly as returned.
+  ocrText       String?
+  /// Per-block text and confidence, so the UI can shade what to distrust.
+  ocrBlocks     Json?
+  /// Lowest block confidence on the page, 0–1. Below the threshold in
+  /// `src/lib/ai/reader.ts` the page cannot be waved through untouched.
+  ocrConfidence Float?
+  /// Which reader produced it, e.g. "kimi:kimi-k3". Matters when the engine is
+  /// swapped and old transcripts need explaining.
+  ocrProvider   String?
+
+  /// What a human confirmed. Null until someone has actually looked.
+  verifiedText String?
+  verifiedAt   DateTime?
+  verifiedById String?
+  verifiedBy   User?     @relation("VerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@unique([submissionId, pageNumber])
+}
+
+enum FlagKind {
+  /// Byte-identical normalised text for the same client.
+  DUPLICATE
+  /// Similar enough to be worth a human deciding.
+  NEAR_DUPLICATE
+  /// Same client, overlapping period, statements that cannot both be true.
+  CONFLICT
+  /// Submitted against a client not accepting submissions.
+  STATUS_BLOCK
+  /// OCR was unsure and a human has not yet confirmed the text.
+  LOW_CONFIDENCE
+}
+
+enum FlagResolution {
+  OPEN
+  /// Confirmed a duplicate; subject submission superseded.
+  DISMISSED_DUPLICATE
+  /// Genuinely new material despite the resemblance.
+  KEPT_BOTH
+  /// Newer submission replaces the older one.
+  MARKED_UPDATE
+  /// Asked the therapist; waiting.
+  NEEDS_CLARIFICATION
+  RESOLVED
+}
+
+/// A machine's opinion, awaiting a human's decision. Nothing here ever deletes
+/// or merges a submission on its own.
+model SubmissionFlag {
+  id String @id @default(cuid())
+
+  submissionId String
+  submission   Submission @relation("FlagSubject", fields: [submissionId], references: [id], onDelete: Cascade)
+
+  relatedSubmissionId String?
+  relatedSubmission   Submission? @relation("FlagRelated", fields: [relatedSubmissionId], references: [id], onDelete: SetNull)
+
+  kind   FlagKind
+  /// 0–1 similarity where meaningful. Null for STATUS_BLOCK.
+  score  Float?
+  /// One sentence a human can act on without opening both documents.
+  detail String?
+
+  resolution   FlagResolution @default(OPEN)
+  resolvedAt   DateTime?
+  resolvedById String?
+  resolvedBy   User?          @relation("ResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([submissionId, resolution])
+  @@index([kind, resolution])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Production
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum NoteState {
+  DRAFT
+  IN_REVIEW
+  /// Signed by a named human. Frozen — further edits create a new version.
+  SIGNED
+  /// Handed back to the practice.
+  DELIVERED
+}
+
+model Note {
+  id String @id @default(cuid())
+
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  /// One note per submission. A correction is a new version of this note, not a
+  /// second note against the same source.
+  submissionId String     @unique
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  templateKind TemplateKind
+  /// Template-shaped body, keyed by field id.
+  body         Json         @default("{}")
+  state        NoteState    @default(DRAFT)
+
+  /// True when a model proposed any of this text. Kept for the record, because
+  /// "was a machine involved" is a question a practice is entitled to ask.
+  aiAssisted Boolean @default(false)
+
+  authoredById String?
+  authoredBy   User?   @relation("AuthoredBy", fields: [authoredById], references: [id], onDelete: SetNull)
+
+  signedById String?
+  signedBy   User?     @relation("SignedBy", fields: [signedById], references: [id], onDelete: SetNull)
+  signedAt   DateTime?
+
+  deliveredAt DateTime?
+
+  /// Bumped on every post-signature edit.
+  version Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tags NoteTag[]
+
+  @@index([practiceId, state])
+  @@index([clientId, createdAt])
+}
+
+enum TagKind {
+  GOAL_PROGRESS
+  GOAL_STALLED
+  RISK
+  ENGAGEMENT_DROP
+}
+
+/// A small structured signal attached to a note by the specialist who wrote it.
+///
+/// This is the entire mechanism behind the clinical half of the insights page.
+/// It is a human ticking a box, not a model inferring a trend, and that is the
+/// point: a "risk increasing" chart built from an unsupervised classifier is a
+/// liability, while one built from what a trained person actually marked is
+/// evidence.
+model NoteTag {
+  id String @id @default(cuid())
+
+  noteId String
+  note   Note   @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  kind  TagKind
+  /// Free-text label, e.g. "sleep hygiene goal" — never note content.
+  label String
+
+  createdAt DateTime @default(now())
+
+  @@index([noteId])
+  @@index([kind, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audit
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Append-only record of who did what — including who *read* what.
+///
+/// Reads are logged, not just writes. In a system holding clinical material the
+/// question "who looked at this person's file" is asked more often than "who
+/// edited it", and a log that only covers writes cannot answer it.
+model AuditLog {
+  id String @id @default(cuid())
+
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  actorId   String?
+  actor     User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  /// Copied at write time so the row still names someone after the user is gone.
+  actorName String
+  actorRole String
+
+  /// e.g. "client.status_changed", "submission.blocked", "page.viewed",
+  /// "note.signed", "insights.exported".
+  action      String
+  entityType  String
+  entityId    String
+  /// Something readable that survives the entity, e.g. a client code.
+  entityLabel String?
+
+  /// Changed fields as { field: { from, to } }. Never contains note text.
+  changes Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([practiceId, createdAt])
+  @@index([entityType, entityId, createdAt])
+}
