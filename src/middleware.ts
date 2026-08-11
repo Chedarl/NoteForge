@@ -8,11 +8,10 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Everything except static assets and the public confirmation link, which
-     * authenticates itself with a signature rather than a session — a therapist
-     * answering "yes, still active" from their phone at a bus stop should not
-     * have to log in first, or they simply will not answer.
+     * Everything except static assets and public capability links. Confirmation
+     * links authenticate with a signature; PDF shares authenticate with a
+     * high-entropy, hashed-at-rest token. Neither requires a browser session.
      */
-    "/((?!_next/static|_next/image|favicon.ico|confirm|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|confirm|share|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

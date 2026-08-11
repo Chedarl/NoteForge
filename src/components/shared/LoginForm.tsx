@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import Link from "next/link";
 import { login, type LoginState } from "@/lib/auth/actions";
 
 export default function LoginForm({ next }: { next: string }) {
@@ -20,7 +21,7 @@ export default function LoginForm({ next }: { next: string }) {
           type="email"
           autoComplete="username"
           required
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-[#087f8c] focus:ring-2 focus:ring-teal-100"
         />
       </div>
 
@@ -34,7 +35,7 @@ export default function LoginForm({ next }: { next: string }) {
           type="password"
           autoComplete="current-password"
           required
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-[#087f8c] focus:ring-2 focus:ring-teal-100"
         />
       </div>
 
@@ -47,10 +48,17 @@ export default function LoginForm({ next }: { next: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+        className="w-full rounded-lg bg-[#087f8c] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#066b76] disabled:opacity-60"
       >
         {pending ? "Signing in…" : "Sign in"}
       </button>
+
+      <p className="text-center text-sm text-slate-600">
+        New practice?{" "}
+        <Link href="/signup" className="font-medium text-sky-700 underline">
+          Create your portal
+        </Link>
+      </p>
     </form>
   );
 }

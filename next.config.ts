@@ -39,6 +39,10 @@ const nextConfig: NextConfig = {
         source: "/api/media/:path*",
         headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
       },
+      {
+        source: "/share/:path*",
+        headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
+      },
     ];
   },
   experimental: {

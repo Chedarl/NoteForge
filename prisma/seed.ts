@@ -149,6 +149,7 @@ async function main() {
         role: person.role,
         discipline: person.discipline,
         practiceId: practice.id,
+        isPlatformAdmin: person.role === "OWNER",
       },
       create: {
         authUserId: authUserId ?? `local-${person.email}`,
@@ -157,6 +158,7 @@ async function main() {
         role: person.role,
         discipline: person.discipline,
         practiceId: practice.id,
+        isPlatformAdmin: person.role === "OWNER",
       },
     });
     users[person.role === "THERAPIST" ? person.email : person.role] = user;
@@ -616,7 +618,11 @@ async function ensureStorageBuckets() {
     },
     {
       name: "note-exports",
-      options: { public: false, allowedMimeTypes: ["text/csv", "application/pdf"], fileSizeLimit: "10MB" },
+      options: {
+        public: false,
+        allowedMimeTypes: ["text/csv", "application/pdf", "application/zip"],
+        fileSizeLimit: "50MB",
+      },
     },
   ];
 

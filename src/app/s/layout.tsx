@@ -6,17 +6,20 @@ export const dynamic = "force-dynamic";
 
 export default async function SpecialistLayout({ children }: { children: React.ReactNode }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const items = [
+    { href: "/s", label: "Queue" },
+    { href: "/s/clients", label: "Clients" },
+    { href: "/s/export", label: "Download" },
+    { href: "/s/insights", label: "Insights" },
+    { href: "/s/audit", label: "Audit" },
+    ...(user.role === "OWNER" ? [{ href: "/s/settings", label: "Team & settings" }] : []),
+    ...(user.isPlatformAdmin ? [{ href: "/admin", label: "Platform admin" }] : []),
+  ];
 
   return (
     <div className="min-h-screen">
       <Nav
-        items={[
-          { href: "/s", label: "Queue" },
-          { href: "/s/clients", label: "Clients" },
-          { href: "/s/export", label: "Download" },
-          { href: "/s/insights", label: "Insights" },
-          { href: "/s/audit", label: "Audit" },
-        ]}
+        items={items}
         current=""
         right={
           <form action={logout} className="flex items-center gap-3">

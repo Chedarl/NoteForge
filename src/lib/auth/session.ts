@@ -47,6 +47,19 @@ export async function requireRoleApi(roles: UserRole[]): Promise<User | null> {
   return user;
 }
 
+/** Platform administration is a separate permission from owning one practice. */
+export async function requirePlatformAdmin(): Promise<User> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  if (!user.isPlatformAdmin) redirect("/denied");
+  return user;
+}
+
+export async function requirePlatformAdminApi(): Promise<User | null> {
+  const user = await getSessionUser();
+  return user?.isPlatformAdmin ? user : null;
+}
+
 /**
  * Where a given role belongs after logging in. Kept in one place so the login
  * page, the middleware and the root page cannot disagree about it.

@@ -20,24 +20,30 @@ export default async function NewNotePage({
   // Hiding them would leave a therapist hunting for a client who is right there
   // and concluding the system is broken; showing them refused, with a reason, is
   // how the status change gets noticed.
-  const clients = await prisma.client.findMany({
-    where: {
-      practiceId: user.practiceId,
-      ...(user.role === "THERAPIST" ? { primaryTherapistId: user.id } : {}),
-    },
-    orderBy: [{ status: "asc" }, { clientCode: "asc" }],
-    select: {
-      id: true,
-      clientCode: true,
-      initials: true,
-      status: true,
-      statusReason: true,
-      statusChangedAt: true,
-      givenNameEnc: true,
-      familyInitial: true,
-      birthYear: true,
-    },
-  });
+  const [clients, practice] = await Promise.all([
+    prisma.client.findMany({
+      where: {
+        practiceId: user.practiceId,
+        ...(user.role === "THERAPIST" ? { primaryTherapistId: user.id } : {}),
+      },
+      orderBy: [{ status: "asc" }, { clientCode: "asc" }],
+      select: {
+        id: true,
+        clientCode: true,
+        initials: true,
+        status: true,
+        statusReason: true,
+        statusChangedAt: true,
+        givenNameEnc: true,
+        familyInitial: true,
+        birthYear: true,
+      },
+    }),
+    prisma.practice.findUnique({
+      where: { id: user.practiceId },
+      select: { noteWriterWhatsApp: true },
+    }),
+  ]);
 
   if (!user.discipline) {
     return (
@@ -84,6 +90,7 @@ export default async function NewNotePage({
         preselectedClientId={preselected ?? ""}
         allowedTemplates={templatesFor(user.discipline)}
         discipline={user.discipline}
+        defaultWhatsApp={practice?.noteWriterWhatsApp ?? ""}
       />
     </div>
   );

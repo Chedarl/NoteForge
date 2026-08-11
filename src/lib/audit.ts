@@ -34,6 +34,8 @@ export type AuditEntityType =
   | "note"
   | "flag"
   | "user"
+  | "practice"
+  | "share"
   | "insights"
   | "confirmation";
 

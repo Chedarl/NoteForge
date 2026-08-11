@@ -6,6 +6,7 @@ import { Upload, X } from "lucide-react";
 import { uploadPage } from "@/lib/uploads/client";
 import { submitPhotoPages, type PhotoState } from "@/lib/intake/photoActions";
 import { STATUS_LABEL } from "@/lib/clients/labels";
+import ShareOnWhatsApp from "@/components/shared/ShareOnWhatsApp";
 import type { ClientStatus } from "@prisma/client";
 
 interface ClientOption {
@@ -33,7 +34,13 @@ interface StagedPage {
  *
  * The submit that follows carries only paths and a date, so it is instant.
  */
-export default function PhotoUpload({ clients }: { clients: ClientOption[] }) {
+export default function PhotoUpload({
+  clients,
+  defaultWhatsApp,
+}: {
+  clients: ClientOption[];
+  defaultWhatsApp: string;
+}) {
   const [staged, setStaged] = useState<StagedPage[]>([]);
   const [busy, setBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -75,6 +82,10 @@ export default function PhotoUpload({ clients }: { clients: ClientOption[] }) {
             ? `${state.success.transcribed} transcribed automatically. A person checks every transcript against the original before any note is written.`
             : "They will be transcribed by a person before any note is written."}
         </p>
+        <ShareOnWhatsApp
+          submissionId={state.success.submissionId}
+          defaultPhone={defaultWhatsApp}
+        />
         <div className="mt-4 flex gap-3 text-sm">
           <Link href="/t/upload" className="font-medium underline">
             Upload another set

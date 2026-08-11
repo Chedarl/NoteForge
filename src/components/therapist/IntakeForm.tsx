@@ -8,6 +8,7 @@ import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import Dictate from "@/components/therapist/Dictate";
 import { StatusBadge } from "@/components/shared/ui";
+import ShareOnWhatsApp from "@/components/shared/ShareOnWhatsApp";
 import type { ClientStatus, Discipline, TemplateKind } from "@prisma/client";
 
 interface ClientOption {
@@ -40,12 +41,14 @@ export default function IntakeForm({
   preselectedClientId,
   allowedTemplates,
   discipline,
+  defaultWhatsApp,
 }: {
   clients: ClientOption[];
   preselectedClientId: string;
   /** Templates for this clinician's discipline, most appropriate first. */
   allowedTemplates: TemplateKind[];
   discipline: Discipline;
+  defaultWhatsApp: string;
 }) {
   const [clientId, setClientId] = useState(preselectedClientId || clients[0]?.id || "");
   const [templateKind, setTemplateKind] = useState<TemplateKind>(allowedTemplates[0]);
@@ -71,6 +74,10 @@ export default function IntakeForm({
             ? " It looks similar to something already submitted for this client, so it has been flagged for a person to check before anything is typed twice."
             : ""}
         </p>
+        <ShareOnWhatsApp
+          submissionId={state.success.submissionId}
+          defaultPhone={defaultWhatsApp}
+        />
         <div className="mt-4 flex gap-3 text-sm">
           <Link href="/t/new" className="font-medium underline">
             Write another

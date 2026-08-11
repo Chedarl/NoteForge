@@ -3,6 +3,10 @@
 A controlled **intake → verification → production → insight** layer that sits between
 therapists and finished clinical notes.
 
+Practices can create their own owner portal from `/signup`, invite clinicians and note
+specialists into role-specific workspaces, and hand a submitted encounter to a note
+writer as an expiring PDF link opened directly in WhatsApp.
+
 It is not an EHR and it is not a replacement for one. It solves the problem that sits
 *upstream* of the note: fragmented, delayed, badly-photographed material arriving from
 several clinicians, about clients whose status changed weeks ago and nobody said.
@@ -15,6 +19,7 @@ several clinicians, about clients whose status changed weeks ago and nobody said
 | The same session handed over twice | Hash, date-proximity and token-overlap detection, escalating to a model only for the pairs a person genuinely needs help with |
 | Notes typed against discharged, transferred or deceased clients | A server-side guardrail that refuses the write, keeps the submission, flags it, and tells the practice — plus a daily sweep that asks about clients who have gone quiet |
 | Getting the material back out to write notes from | A per-client or batch download: one folder per client, one file per session date, in JSON and Markdown, each carrying the session date, the clinician's discipline and the client's status |
+| Fast handoff to the note writer | A server-generated PDF in private storage, available through a hashed, expiring, download-limited link prefilled into WhatsApp |
 | "You just type notes" | An insights layer measuring turnaround, completeness, duplicates caught and status accuracy, plus clinical signals a specialist explicitly tagged |
 
 ## What is deliberately *not* here
@@ -129,6 +134,9 @@ src/lib/crypto/field.ts   AES-256-GCM column encryption for client names
 src/lib/insights/         metrics, as live Prisma aggregates
 src/app/t/                therapist portal  (mobile-first)
 src/app/s/                specialist workspace (queue, verify, note, insights, audit)
+src/app/admin/            platform account and access administration (no clinical text)
+src/app/signup/           self-service practice-owner provisioning
+src/app/share/            public expiring capability route for private PDFs
 src/app/confirm/          the one unauthenticated page — signed single-purpose links
 ```
 

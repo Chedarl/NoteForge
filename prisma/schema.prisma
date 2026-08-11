@@ -46,18 +46,21 @@ datasource db {
 /// and every query filters on it, because the alternative — remembering to
 /// filter — is how one practice ends up reading another's clients.
 model Practice {
-  id        String   @id @default(cuid())
-  name      String
+  id                 String   @id @default(cuid())
+  name               String
   /// Short slug used in client codes, e.g. "RVN" -> RVN-0142.
-  code      String   @unique
+  code               String   @unique
+  /// Optional E.164 number used to prefill the one-button WhatsApp handoff.
+  /// It is a staff destination, never a client's phone number.
+  noteWriterWhatsApp String?
   /// Hours we promise to turn a submission around in. Drives queue urgency and
   /// the on-time figure in the insights dashboard.
-  slaHours  Int      @default(48)
+  slaHours           Int      @default(48)
   /// How many days of silence before the daily sweep asks a therapist to
   /// confirm a client is still active.
-  staleDays Int      @default(60)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  staleDays          Int      @default(60)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   users               User[]
   clients             Client[]
@@ -65,6 +68,7 @@ model Practice {
   notes               Note[]
   auditLogs           AuditLog[]
   statusConfirmations StatusConfirmation[]
+  shareLinks          ShareLink[]
 }
 
 enum UserRole {
@@ -108,11 +112,15 @@ model User {
   /// Supabase Auth user id. Authentication is Supabase's job; authorization is
   /// this row's job, re-read on every request so suspending an account takes
   /// effect immediately rather than at the next login.
-  authUserId String     @unique
-  email      String     @unique
-  fullName   String
-  role       UserRole
-  status     UserStatus @default(ACTIVE)
+  authUserId      String     @unique
+  email           String     @unique
+  fullName        String
+  role            UserRole
+  status          UserStatus @default(ACTIVE)
+  /// Platform-wide access is separate from the practice role. It is never read
+  /// from user-editable Supabase metadata and is never granted to an arbitrary
+  /// first signup.
+  isPlatformAdmin Boolean    @default(false)
 
   /// Null until the clinician has said which they are. The portal asks on first
   /// use and will not let a submission through without it, because a submission
@@ -136,6 +144,7 @@ model User {
   clientsLastTouched  Client[]             @relation("ClientStatusChangedBy")
   statusConfirmations StatusConfirmation[] @relation("ConfirmationTherapist")
   auditLogs           AuditLog[]
+  createdShareLinks   ShareLink[]          @relation("ShareCreatedBy")
 
   @@index([practiceId, role])
 }
@@ -214,6 +223,8 @@ model Client {
   @@unique([practiceId, clientCode])
   @@index([practiceId, status])
   @@index([practiceId, primaryTherapistId])
+  @@index([primaryTherapistId])
+  @@index([statusChangedById])
 }
 
 /// Append-only history of every status transition. Nothing updates or deletes a
@@ -237,6 +248,7 @@ model ClientStatusEvent {
   createdAt DateTime @default(now())
 
   @@index([clientId, createdAt])
+  @@index([changedById])
 }
 
 /// A periodic "is this client still active?" question, sent to the therapist
@@ -264,6 +276,7 @@ model StatusConfirmation {
 
   @@index([practiceId, respondedAt])
   @@index([clientId])
+  @@index([therapistId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,10 +380,13 @@ model Submission {
   flags        SubmissionFlag[] @relation("FlagSubject")
   relatedFlags SubmissionFlag[] @relation("FlagRelated")
   note         Note?
+  shareLinks   ShareLink[]
 
   @@index([practiceId, state, createdAt])
   @@index([clientId, encounterDate])
   @@index([practiceId, contentHash])
+  @@index([submittedById])
+  @@index([supersedesId])
   /// Backs the export, which is always "this client, these session dates".
   @@index([practiceId, encounterDate])
   /// Trigram index over the normalised text. Turns "has anyone already given us
@@ -378,6 +394,45 @@ model Submission {
   /// every week. GIN rather than GiST: the row is written once per encounter and
   /// read on every intake, so the slower build buys the lookup speed we want.
   @@index([normalizedText(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Controlled external handoff
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// An expiring capability URL for one generated PDF.
+///
+/// Only a SHA-256 hash of the bearer token is stored, so a database read cannot
+/// be turned into a working download link. The PDF itself remains in the private
+/// note-exports bucket and can only be retrieved through the token route.
+model ShareLink {
+  id String @id @default(cuid())
+
+  tokenHash String @unique
+
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  createdById String?
+  createdBy   User?   @relation("ShareCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  /// `note-exports/<practiceId>/shares/<random>.pdf`; never a public URL.
+  storagePath String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  downloadCount    Int       @default(0)
+  maxDownloads     Int       @default(10)
+  lastDownloadedAt DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([practiceId, submissionId, createdAt])
+  @@index([submissionId])
+  @@index([createdById])
+  @@index([expiresAt, revokedAt])
 }
 
 /// One photographed page, its machine transcript, and the human-confirmed text.
@@ -415,6 +470,7 @@ model SubmissionPage {
   createdAt DateTime @default(now())
 
   @@unique([submissionId, pageNumber])
+  @@index([verifiedById])
 }
 
 enum FlagKind {
@@ -469,6 +525,8 @@ model SubmissionFlag {
 
   @@index([submissionId, resolution])
   @@index([kind, resolution])
+  @@index([relatedSubmissionId])
+  @@index([resolvedById])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -526,6 +584,8 @@ model Note {
 
   @@index([practiceId, state])
   @@index([clientId, createdAt])
+  @@index([authoredById])
+  @@index([signedById])
 }
 
 enum TagKind {
@@ -594,4 +654,5 @@ model AuditLog {
 
   @@index([practiceId, createdAt])
   @@index([entityType, entityId, createdAt])
+  @@index([actorId])
 }

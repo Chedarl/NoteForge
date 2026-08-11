@@ -74,6 +74,13 @@ not for production caseloads.
 - **Storage** — both buckets are private. There are no public URLs anywhere in the
   codebase. Reads go through `/api/media/[...path]`, which checks the object against the
   caller's practice, writes an audit row, and issues a 60-second signed URL.
+- **WhatsApp PDF handoff** — the PDF remains in the private `note-exports` bucket. The
+  WhatsApp message contains a random capability URL whose token is hashed in the
+  database, expires after 24 hours by default, and stops after 10 downloads. Client
+  names are excluded. WhatsApp receives the link, not direct storage credentials.
+- **Row-level security** — RLS is enabled on every application table in the exposed
+  `public` schema. There are no browser Data API policies for domain data; all access
+  goes through server-side, role- and practice-scoped application code.
 - **Audit trail** — append-only, and covers reads (`client.viewed`, `page.viewed`,
   `insights.exported`) as well as writes. No code path updates or deletes an `AuditLog`
   row. There is no export button on the audit page, deliberately.
@@ -94,8 +101,6 @@ not for production caseloads.
 ## What is not implemented
 
 - Business Associate Agreements. Nothing in code can substitute.
-- Row-level security in Postgres. Isolation is enforced in the application layer. RLS
-  would be defence in depth and is worth adding before production.
 - Encryption of *note text* at the column level. Client names are encrypted; the notes
   themselves are not. Supabase encrypts at rest at the volume level, so a compromised
   database credential still reads plaintext clinical narrative. This is the largest
@@ -119,13 +124,12 @@ not for production caseloads.
    (`src/lib/ai/classify.ts`). Both send note text to the model provider. Both degrade
    cleanly to nothing when `KIMI_API_KEY` is unset — the product still works, a person
    just does more of the reading.
-4. Add Postgres RLS policies mirroring the application's practice scoping.
-5. Add retention rules and a deletion path.
-6. Enforce MFA for every role, not just the staff ones.
-7. Move `FIELD_ENCRYPTION_KEY` into a managed secret store with rotation, rather than a
+4. Add retention rules and a deletion path, including cleanup of expired handoff PDFs.
+5. Enforce MFA for every role, not just the staff ones.
+6. Move `FIELD_ENCRYPTION_KEY` into a managed secret store with rotation, rather than a
    Vercel environment variable. Rotation needs a re-encryption pass; the version prefix
    (`v1:`) on every stored value exists so that pass can tell old from new.
-8. Get a lawyer to read this list and the code that implements it.
+7. Get a lawyer to read this list and the code that implements it.
 
 ## Reporting a problem
 
