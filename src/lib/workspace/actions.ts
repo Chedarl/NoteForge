@@ -62,24 +62,29 @@ export async function saveVerification(
   const submission = await loadSubmission(submissionId, user.practiceId);
   if (!submission) return { error: "That submission could not be found." };
 
-  const empty: number[] = [];
-  for (const page of submission.pages) {
-    const text = String(formData.get(`page_${page.id}`) ?? "").trim();
-    if (!text) {
-      empty.push(page.pageNumber);
-      continue;
-    }
-    await prisma.submissionPage.update({
-      where: { id: page.id },
-      data: { verifiedText: text, verifiedAt: new Date(), verifiedById: user.id },
-    });
-  }
+  // Validate the entire form before writing any page. Previously, pages before
+  // an empty one were marked verified even though the submission was rejected.
+  const transcripts = submission.pages.map((page) => ({
+    page,
+    text: String(formData.get(`page_${page.id}`) ?? "").trim(),
+  }));
+  const empty = transcripts.filter(({ text }) => !text).map(({ page }) => page.pageNumber);
 
   if (empty.length > 0) {
     return {
       error: `Page ${empty.join(", ")} still has no text. Type what you can read, or write "[illegible]" — a page cannot be left blank.`,
     };
   }
+
+  const verifiedAt = new Date();
+  await prisma.$transaction(
+    transcripts.map(({ page, text }) =>
+      prisma.submissionPage.update({
+        where: { id: page.id },
+        data: { verifiedText: text, verifiedAt, verifiedById: user.id },
+      })
+    )
+  );
 
   const flagged = await finishVerification(submissionId);
 
