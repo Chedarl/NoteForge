@@ -48,6 +48,16 @@ export async function submitPhotoPages(
 
   if (!clientId || !encounterDateRaw) return { error: "Choose a client and the session date." };
   if (paths.length === 0) return { error: "Add at least one photograph." };
+  if (paths.length > 20) return { error: "A submission can contain at most 20 pages." };
+  if (new Set(paths).size !== paths.length) return { error: "The same page was submitted more than once." };
+
+  // Upload URLs are minted under note-pages/<practiceId>/... by the server.
+  // Never register a browser-supplied path from another tenant or bucket.
+  const requiredPrefix = `${BUCKET_PAGES}/${user.practiceId}/`;
+  if (paths.some((path) => !path.startsWith(requiredPrefix) || path.includes(".."))) {
+    logSafe("photo.submit", "rejected storage path outside caller practice", { userId: user.id });
+    return { error: "One or more uploaded pages are not valid for this practice." };
+  }
 
   const encounterDate = new Date(encounterDateRaw);
   if (Number.isNaN(encounterDate.getTime())) return { error: "That session date is not valid." };
