@@ -44,4 +44,3 @@ jobs:
               echo "prisma/migrations is out of date with prisma/schema.prisma"
               exit 1
             }
-        continue-on-error: true
