@@ -5,5 +5,8 @@
       "path": "/api/cron/status-sweep",
       "schedule": "0 7 * * *"
     }
-  ]
+  ],
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next"
 }
