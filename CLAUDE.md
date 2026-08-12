@@ -162,6 +162,26 @@ for this; locally it is the second database in the setup above. This bit CI the
 moment the build started migrating, and the failure reads as schema drift when
 it is nothing of the kind.
 
+### A schema lag takes down every page, not the ones you would guess
+
+`getSessionUser` selects the whole `User` row, and `requireRole` — which every
+page and every server action goes through — calls it. So a database missing any
+recent `User` column throws P2022 *there*, and the entire signed-in product dies
+with a blank "server-side exception", the root redirect included.
+
+This cost a lot of time because the symptoms name the wrong thing. Per-screen
+"migrations pending" banners were added to `/t/write` and `/s/settings` and
+appeared to do nothing at all: both screens crash inside `requireRole`, several
+frames before their own first line runs. Anything that has to stay reachable
+while the schema is behind belongs *above* the session layer, not inside a page.
+
+The session layer now raises `SchemaBehindError` (`src/lib/db/schemaLag.ts`) and
+redirects to `/setup-required`, which is unauthenticated for the same reason
+`/api/health` is: the condition being reported is the one that breaks signing in.
+It fails closed — nobody is admitted on a lagging schema — because carrying on
+with defaults for the missing columns keeps the app looking usable while writes
+fail deeper in, which relocates the confusion rather than ending it.
+
 ### Migrations
 
 `pg_trgm` and the GIN trigram index are declared in `schema.prisma` (via the

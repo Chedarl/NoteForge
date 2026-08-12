@@ -9,6 +9,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { prisma } from "@/lib/prisma";
 import { homeFor } from "@/lib/auth/session";
+import { isMissingSchema } from "@/lib/db/schemaLag";
 import { isBootstrapPlatformAdmin } from "@/lib/auth/platform";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { logSafe } from "@/lib/redact";
@@ -267,19 +268,6 @@ function makePracticeCode(name: string): string {
   const fallback = words.join("").slice(0, 3);
   const prefix = (initials || fallback || "NF").padEnd(2, "X");
   return `${prefix}-${randomBytes(2).toString("hex").toUpperCase()}`;
-}
-
-/** A table or column the code expects is not in the database yet. */
-function isMissingSchema(error: unknown): boolean {
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    return error.code === "P2021" || error.code === "P2022";
-  }
-  // Prisma reports some of these as an initialisation or validation failure
-  // rather than a known request error, so the message is the only signal.
-  const message = error instanceof Error ? error.message : String(error);
-  return /does not exist in the current database|column .* does not exist|relation .* does not exist/i.test(
-    message
-  );
 }
 
 function isPracticeCodeCollision(error: unknown): boolean {
