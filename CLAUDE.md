@@ -146,6 +146,22 @@ reports `schemaUpToDate`, and the write, signup and settings screens each say so
 rather than crashing. Without `DIRECT_URL` it skips entirely, so building
 locally does not migrate anything as a side effect.
 
+It also skips on **Vercel preview builds** (`VERCEL_ENV` set to anything but
+`production`). One Supabase project sits behind every environment, so a preview
+shares the production database — and a preview is built from a branch nobody has
+merged. Ungated, opening a pull request would apply that branch's migrations to
+the live database, and a migration that drops a column would break production
+while the change was still being discussed. `VERCEL_ENV` is unset off Vercel, so
+CI and self-hosted builds still migrate the database they were handed.
+
+**The shadow database must never be the one the build migrates.** `migrate diff`
+replays every migration into its shadow from nothing, and it *resets that
+database first* — so pointing it at `DATABASE_URL` both fails with P3006 and
+wipes the schema the build just applied. CI creates a separate `shadow` database
+for this; locally it is the second database in the setup above. This bit CI the
+moment the build started migrating, and the failure reads as schema drift when
+it is nothing of the kind.
+
 ### Migrations
 
 `pg_trgm` and the GIN trigram index are declared in `schema.prisma` (via the

@@ -23,12 +23,32 @@ import { spawnSync } from "node:child_process";
  * It is skipped entirely without `DIRECT_URL`, which is the local case: a
  * developer running `npm run build` on a laptop should not have their database
  * migrated as a side effect of type-checking.
+ *
+ * It is also skipped on Vercel preview builds. There is one Supabase project
+ * behind every environment, so a preview shares the production database — and
+ * a preview build is produced from a branch nobody has reviewed or merged yet.
+ * Left ungated, opening a pull request would apply that branch's migrations to
+ * the live database, and a migration that drops or renames a column would break
+ * production while the change was still being discussed. Previews render against
+ * whatever schema production is on, and say so when that schema is behind.
  */
 
 const directUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
 if (!directUrl) {
   console.log("[migrate] No DIRECT_URL or DATABASE_URL set — skipping migrations.");
+  process.exit(0);
+}
+
+// Unset everywhere that is not Vercel — CI, Docker, a self-hosted runner — and
+// those should migrate the database they were handed. Only Vercel's own
+// preview and development builds are held back.
+const vercelEnv = process.env.VERCEL_ENV;
+if (vercelEnv && vercelEnv !== "production") {
+  console.log(
+    `[migrate] Vercel ${vercelEnv} build — skipping migrations so an unmerged ` +
+      "branch cannot alter the shared production schema."
+  );
   process.exit(0);
 }
 
