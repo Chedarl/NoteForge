@@ -119,6 +119,7 @@ export async function createWhatsAppShare(
         tokenHash,
         practiceId: user.practiceId,
         submissionId: submission.id,
+        documentKind: "submission",
         createdById: user.id,
         storagePath,
         expiresAt,
@@ -276,10 +277,11 @@ export async function createRoundWhatsAppShare(
       data: {
         tokenHash,
         practiceId: user.practiceId,
-        // Anchored to the first submission because ShareLink belongs to one.
-        // The stored object is the whole round; the anchor exists so revoking
-        // and auditing still have something concrete to point at.
+        // Anchored to the first submission because a round has no single one
+        // of its own. The stored object is the whole round; the anchor exists
+        // so revoking and auditing have something concrete to point at.
         submissionId: submissions[0].id,
+        documentKind: submissions.length === 1 ? "submission" : "round",
         createdById: user.id,
         storagePath,
         expiresAt,

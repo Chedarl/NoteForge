@@ -12,13 +12,30 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const owner = await requireRole(["OWNER"]);
-  const [practice, users] = await Promise.all([
-    prisma.practice.findUniqueOrThrow({ where: { id: owner.practiceId } }),
-    prisma.user.findMany({
-      where: { practiceId: owner.practiceId },
-      orderBy: [{ role: "asc" }, { fullName: "asc" }],
-    }),
-  ]);
+
+  const users = await prisma.user.findMany({
+    where: { practiceId: owner.practiceId },
+    orderBy: [{ role: "asc" }, { fullName: "asc" }],
+  });
+
+  /*
+   * `findUniqueOrThrow` selects every column on Practice, including
+   * `noteWriterWhatsApp` — which arrived in a later migration. On a database
+   * that was created but never migrated the column is absent and this page dies
+   * with a blank server exception, while most of the rest of the app carries on
+   * working. That is the third screen to fail this way, so it is caught here
+   * too and reported as what it is.
+   */
+  let practice: { noteWriterWhatsApp: string | null } | null = null;
+  let migrationsPending = false;
+  try {
+    practice = await prisma.practice.findUnique({
+      where: { id: owner.practiceId },
+      select: { noteWriterWhatsApp: true },
+    });
+  } catch {
+    migrationsPending = true;
+  }
 
   return (
     <div className="space-y-8">
@@ -33,13 +50,26 @@ export default async function SettingsPage() {
         </p>
       </div>
 
+      {migrationsPending && (
+        <div className="rounded-[var(--nf-radius)] border border-amber-300 bg-amber-50 px-4 py-3.5 text-sm text-amber-900">
+          <p className="font-semibold">This deployment&rsquo;s database is behind the code.</p>
+          <p className="mt-1">
+            The tables exist but the most recent migration has not been applied, so the
+            WhatsApp handoff setting cannot be read or saved. Run{" "}
+            <code className="font-mono">npx prisma migrate deploy</code> against the
+            production database. <a href="/api/health" className="underline">/api/health</a>{" "}
+            reports exactly what is configured.
+          </p>
+        </div>
+      )}
+
       <div className="grid gap-5 lg:grid-cols-2">
         <Card className="p-5">
           <h2 className="font-semibold">WhatsApp handoff</h2>
           <p className="mt-1 mb-5 text-sm text-slate-600">
             Clinicians can override this per message; this is the convenient default.
           </p>
-          <WhatsAppSettingsForm defaultPhone={practice.noteWriterWhatsApp ?? ""} />
+          <WhatsAppSettingsForm defaultPhone={practice?.noteWriterWhatsApp ?? ""} />
         </Card>
         <Card className="p-5">
           <h2 className="font-semibold">Invite a team member</h2>

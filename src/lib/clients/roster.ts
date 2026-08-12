@@ -11,6 +11,8 @@ import { normalizeWhatsAppNumber } from "@/lib/sharing/phone";
 import { safeSegment } from "@/lib/export/zip";
 import { writeAudit } from "@/lib/audit";
 import { logSafe } from "@/lib/redact";
+import { storeSharedPdf, whatsappHandoff } from "@/lib/sharing/store";
+import { siteUrl } from "@/lib/email/send";
 
 /**
  * "Here is who I am carrying, and who is still open."
@@ -37,6 +39,8 @@ export interface RosterState {
     total: number;
     active: number;
     whatsapp: { sent: boolean; message: string } | null;
+    /** Present when a share link was made — the path that needs no Cloud API. */
+    whatsappUrl?: string;
   };
 }
 
@@ -156,9 +160,40 @@ export async function sendClientRoster(
       : { sent: false, message: sendFailureMessage(sent) };
   }
 
+  /*
+   * The share link is always made, not only when the Cloud API is missing.
+   *
+   * Without it this button did nothing at all on a deployment that has no Meta
+   * Business account — the same gap that left the write screen with no way to
+   * send. With it, the clinician always ends up with something they can press,
+   * and the Cloud API becomes an optimisation rather than a prerequisite.
+   */
+  const stored = await storeSharedPdf({
+    user,
+    bytes: new Uint8Array(pdf),
+    documentKind: "roster",
+    submissionId: null,
+    auditLabel: `${rows.length} clients, ${activeCount} active`,
+  });
+
+  let whatsappUrl: string | undefined;
+  if (stored.ok) {
+    whatsappUrl = whatsappHandoff({
+      phone: destination,
+      siteUrl: siteUrl(),
+      token: stored.share.token,
+      ttlHours: stored.share.ttlHours,
+      // A count and a date. Never a name — this message sits in a chat preview.
+      lead: `A NoteForge client list is ready: ${activeCount} active of ${rows.length}.`,
+    }).whatsappUrl;
+  } else if (!whatsapp) {
+    // Nothing sent and no link either. Say why rather than claiming success.
+    return { error: stored.error };
+  }
+
   revalidatePath("/t");
 
   return {
-    success: { filename, total: rows.length, active: activeCount, whatsapp },
+    success: { filename, total: rows.length, active: activeCount, whatsapp, whatsappUrl },
   };
 }
