@@ -21,6 +21,12 @@ nothing should quietly cross it.
 
 These are load-bearing. Changing one is a product decision, not a refactor.
 
+0. **Every new way in goes through `submitEncounter`.** There are now two intake
+   surfaces — the structured form at `/t/new` and the one-box quick update at
+   `/t/write` — and there will be more. They are all thin surfaces over the same
+   door. A path that writes a `Submission` directly would bypass the guardrail,
+   the duplicate detector and the audit trail in one step, and it would look
+   entirely reasonable in review. Do not add one.
 1. **The status guardrail runs server-side at write time.** `src/lib/clients/guard.ts` is
    the single enforcement point and every intake path goes through it. Not form
    validation — a form is stale the moment it loads, and "the client was active this
@@ -57,6 +63,15 @@ src/lib/intake/disciplines.ts SCW / NP and which templates each sees
 src/lib/dedupe/            normalise → compare → detect, cheapest layer first
 src/lib/ai/                kimi client, OCR reader, pair classifier, drafter
 src/lib/export/            the ZIP bundle + a dependency-free ZIP writer
+src/lib/export/pdf.tsx     the §5 submission PDF — read the style comments before editing
+src/lib/export/submissionPdf.ts assembles the PDF from the database; pdf.tsx stays pure
+src/lib/export/changes.ts  "what changed since last submission", derived and not judged
+src/lib/whatsapp/send.ts   sends the PDF to the note writer — read the header first
+src/lib/intake/quickActions.ts the write-and-send path, thin over submitEncounter
+src/lib/clients/resolve.ts a typed name finds or creates the client — read the header
+src/lib/export/rosterPdf.tsx the caseload as a document — who is still open
+src/lib/clients/roster.ts  builds and sends the client list
+src/app/api/health/route.ts is this deployment wired up? booleans, never values
 src/lib/insights/          metrics as live Prisma aggregates
 src/app/t/                 clinician portal (mobile-first)
 src/app/s/                 internal workspace: queue, verify, note, download, insights, audit
@@ -154,3 +169,25 @@ workspace, insights, audit, encrypted client names, disciplines, and the ZIP exp
 
 `docs/REQUIREMENTS.md` holds the client's own specification with a status against each
 clause. Everything marked **TO BUILD** there is the current work.
+
+## The §5 PDF, and a trap that costs an afternoon
+
+`npm run verify:pdf` renders the real layout from synthetic data with no database and no
+Next.js. Use it after any change to `pdf.tsx`, because two failures in
+`@react-pdf/renderer` are completely silent:
+
+1. `lineHeight` on a `Page` style makes every `fixed` element carrying a `render`
+   callback disappear.
+2. A `<Text render={…}>` nested inside an absolutely-positioned `fixed` View drops that
+   whole View.
+
+No error, no warning, no gap in the layout — so lint, typecheck and build all stay green
+while the running footer is simply absent from the file. Set line height on text styles,
+and keep `render` on a top-level element. Both are commented at the point of use.
+
+`pdf.tsx` is deliberately **not** `server-only`: it is pure, and the mark would pull in
+the `react-server` condition, which breaks react-pdf's reconciler and would make the
+verification script impossible. `submissionPdf.ts` is the half that touches Prisma, and
+that one is marked.
+
+The general lesson is the one already in this file: open the artefact.

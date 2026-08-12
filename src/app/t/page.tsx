@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
+import { whatsappConfigured } from "@/lib/whatsapp/send";
+import SendClientList from "@/components/therapist/SendClientList";
 import { Card, EmptyState, Pill, SectionTitle, StatusBadge } from "@/components/shared/ui";
 import { fmtDate, ageLabel } from "@/lib/utils";
 import StatusChanger from "@/components/therapist/StatusChanger";
@@ -37,8 +39,34 @@ export default async function TherapistHome() {
   const active = clients.filter((c) => c.status === "ACTIVE");
   const inactive = clients.filter((c) => c.status !== "ACTIVE");
 
+  /*
+   * The note-writer number lives on a column added in a later migration, so a
+   * database that was never migrated throws here while every other query is
+   * fine. Caught for the same reason it is caught on the write screen: this is
+   * the caseload, and it should still render.
+   */
+  let noteWriterNumber: string | null = null;
+  try {
+    const practice = await prisma.practice.findUnique({
+      where: { id: user.practiceId },
+      select: { noteWriterWhatsApp: true },
+    });
+    noteWriterNumber = practice?.noteWriterWhatsApp ?? null;
+  } catch {
+    // Left null — the list can still be built and downloaded.
+  }
+
   return (
     <div className="space-y-8">
+      {clients.length > 0 && (
+        <SendClientList
+          noteWriterNumber={noteWriterNumber}
+          whatsappReady={whatsappConfigured()}
+          clientCount={clients.length}
+          activeCount={active.length}
+        />
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">My clients</h1>

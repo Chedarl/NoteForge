@@ -136,7 +136,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
                   </Pill>
                 ))}
               <span className="text-xs text-slate-500">{submission.submittedBy.fullName}</span>
-              <span className="ml-auto text-sm">
+              <span className="ml-auto flex items-center gap-3 text-sm">
                 {submission.state === "BLOCKED" ? (
                   <span className="text-xs text-slate-500">Not queued — status refused it</span>
                 ) : (
@@ -144,6 +144,16 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
                     {submission.note?.signedAt ? "View note" : "Open"}
                   </Link>
                 )}
+                {/* A plain anchor: a file download, not a navigation. Prefetching
+                    it would render a PDF and audit a read for every row shown. */}
+                <a
+                  href={`/api/export/submission/${submission.id}`}
+                  target="_blank"
+                  rel="noopener"
+                  className="text-xs text-slate-600 underline"
+                >
+                  PDF
+                </a>
               </span>
             </Card>
           ))}

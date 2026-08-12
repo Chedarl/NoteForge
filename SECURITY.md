@@ -98,6 +98,29 @@ not for production caseloads.
     guessed client id from another tenant yields nothing. Names off by default, and the
     audit row records the date range, the counts, and whether names were included.
 
+## WhatsApp document delivery
+
+The write-and-send path (`/t/write`) sends the finished PDF to the practice's note-writer
+number through Meta's Cloud API. **Meta does not sign a BAA covering WhatsApp on any
+plan**, so a document sent that way is permanently outside the controlled environment: on
+Meta's infrastructure, in a chat history, and in whatever backs that phone up.
+
+This was raised with the client and chosen deliberately over a link-only flow; the
+decision is recorded in `docs/REQUIREMENTS.md` §7a. What the code does about it:
+
+- Documents carry the **client code only** unless the clinician explicitly ticks the name
+  box on that submission. Off by default, every time.
+- The message caption is a client code and a date. Never note text — a WhatsApp preview
+  appears on a lock screen.
+- Every send is audited, and `submission.whatsapp_sent_with_names` is a distinct action
+  from `submission.whatsapp_sent`. Failures are audited too.
+- With no credentials configured the send returns `not_configured`, the submission and
+  PDF still exist, and the clinician downloads it instead.
+
+**The safer path is already built.** The tokenised, expiring `/share/[token]` link keeps
+the document inside the system and only puts a URL in the chat. Making it the only route
+is a change to one call site in `src/lib/intake/quickActions.ts`.
+
 ## What is not implemented
 
 - Business Associate Agreements. Nothing in code can substitute.

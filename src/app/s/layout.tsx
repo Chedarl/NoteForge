@@ -7,6 +7,13 @@ export const dynamic = "force-dynamic";
 export default async function SpecialistLayout({ children }: { children: React.ReactNode }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
   const items = [
+    /*
+     * An owner is usually the clinician too, and this navigation had no way at
+     * all to reach the writing screen — the product's main feature was
+     * unreachable from the interface for the exact person who signed up for it.
+     * A specialist has no `/t` access, so they do not get the link.
+     */
+    ...(user.role === "OWNER" ? [{ href: "/t/write", label: "Write" }] : []),
     { href: "/s", label: "Queue" },
     { href: "/s/clients", label: "Clients" },
     { href: "/s/export", label: "Download" },
@@ -20,7 +27,6 @@ export default async function SpecialistLayout({ children }: { children: React.R
     <div className="min-h-screen">
       <Nav
         items={items}
-        current=""
         right={
           <form action={logout} className="flex items-center gap-3">
             <span className="hidden text-xs text-slate-500 sm:inline">

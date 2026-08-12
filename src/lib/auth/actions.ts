@@ -11,7 +11,6 @@ import { prisma } from "@/lib/prisma";
 import { homeFor } from "@/lib/auth/session";
 import { isBootstrapPlatformAdmin } from "@/lib/auth/platform";
 import { checkRateLimit } from "@/lib/security/rateLimit";
-import { siteUrl } from "@/lib/email/send";
 import { logSafe } from "@/lib/redact";
 import type { Discipline } from "@prisma/client";
 
@@ -112,52 +111,101 @@ export async function signup(
 
   const { email, password, fullName, practiceName, discipline } = parsed.data;
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      emailRedirectTo: `${siteUrl()}/auth/callback?next=/s`,
-      data: { full_name: fullName },
-    },
-  });
 
-  // Supabase deliberately obscures whether a confirmed address already exists.
-  // Keep our response equally non-enumerating and do not create an app profile
-  // for the obfuscated identity returned in that case.
-  if (error || !data.user || data.user.identities?.length === 0) {
+  /*
+   * The account is created already confirmed, and the person is signed straight
+   * in. It used to go through `auth.signUp`, which sends a confirmation email
+   * and leaves the account unusable until the link is clicked.
+   *
+   * That was the single thing standing between this product and being usable.
+   * Supabase's built-in SMTP is rate-limited to a handful of messages an hour
+   * and is explicitly not for production, so on a fresh project a real fraction
+   * of people who sign up simply never receive the mail and can never sign in.
+   * A self-serve tool that silently fails to let a third of its signups
+   * through is not shipped, whatever the code says.
+   *
+   * The trade this makes is real and worth stating: **an address is not proven
+   * to belong to the person who typed it.** What that does and does not buy an
+   * attacker here — a signup creates a *new, empty* practice and never joins an
+   * existing one, so registering someone else's address gets you an empty
+   * workspace and no access to anybody's data. The cost is that password reset,
+   * which does need a working mailbox, may go to someone who cannot read it.
+   *
+   * Turn this around by configuring real SMTP in Supabase and switching back to
+   * `auth.signUp`; the confirmation routes at `/auth/callback` and
+   * `/auth/confirm` are already built and stay working either way.
+   */
+  let authUserId: string;
+  try {
+    const { data: created, error: createError } = await createAdminClient().auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName },
+    });
+
+    if (createError || !created.user) {
+      // Open registration changes the threat model that the deliberately vague
+      // login message was written for. That message protects the staff list of
+      // a named practice; here anyone may register, so "already registered" is
+      // not a disclosure — and hiding it strands a real person on a screen that
+      // will never work for them.
+      const alreadyExists =
+        createError?.status === 422 ||
+        /already|exists|registered/i.test(createError?.message ?? "");
+      if (alreadyExists) {
+        return { error: "There is already an account with that email. Sign in instead." };
+      }
+      logSafe("signup", "supabase rejected the registration", { reason: createError?.message });
+      return { error: "That account could not be created. Please try again." };
+    }
+    authUserId = created.user.id;
+  } catch (adminError) {
+    // No service key configured. Say so rather than failing opaquely.
+    logSafe("signup", "admin client unavailable", {
+      error: adminError instanceof Error ? adminError.message : String(adminError),
+    });
     return {
-      success:
-        "If this address can be registered, an email is on its way. Follow its link to continue.",
+      error:
+        "Registration is not fully configured on this deployment. Ask an administrator to set the Supabase secret key.",
     };
   }
 
   try {
     await provisionPracticeOwner({
-      authUserId: data.user.id,
+      authUserId,
       email,
       fullName,
       practiceName,
       discipline,
     });
   } catch (provisionError) {
-    await supabase.auth.signOut();
     try {
-      await createAdminClient().auth.admin.deleteUser(data.user.id);
+      await createAdminClient().auth.admin.deleteUser(authUserId);
     } catch (cleanupError) {
       logSafe("signup", "failed to remove unprovisioned auth identity", {
-        authUserId: data.user.id,
+        authUserId,
         error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
       });
     }
     logSafe("signup", "practice provisioning failed", {
-      authUserId: data.user.id,
+      authUserId,
       error: provisionError instanceof Error ? provisionError.message : String(provisionError),
     });
     return { error: "Your workspace could not be created. Nothing was charged; please try again." };
   }
 
-  if (data.session) redirect("/s?welcome=1");
-  return { success: "Check your email to confirm the account, then your workspace will open." };
+  // Sign them in so the next screen is their workspace and not a login form
+  // they have just proved they can pass.
+  const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+  if (signInError) {
+    logSafe("signup", "created but could not start a session", { authUserId });
+    return { success: "Your workspace is ready. Sign in to open it." };
+  }
+
+  // Straight to the thing they signed up to do. `homeFor` would send an OWNER
+  // to the internal queue, which is not what a clinician came here for.
+  redirect("/t/write?welcome=1");
 }
 
 async function provisionPracticeOwner(input: {

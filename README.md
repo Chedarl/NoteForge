@@ -36,6 +36,21 @@ several clinicians, about clients whose status changed weeks ago and nobody said
   volume it works, it is instant, it is free, and the note text never leaves the
   database to be embedded.
 
+## The fast path
+
+Sign up, pick a client, and write what you discussed in one box. It is saved with the date
+and time it happened, turned into a PDF straight away, and sent to whoever writes the
+notes.
+
+That path is deliberately thin over the same machinery as everything else: the status
+guardrail still refuses a note against a discharged or deceased client, duplicates are
+still detected, and everything is still audited. Simple to use is not the same as simple
+underneath.
+
+WhatsApp is not a protected channel. Documents go out identified by client code only
+unless the clinician asks for the name, and an expiring share link is available as the
+safer alternative. See [SECURITY.md](SECURITY.md).
+
 ## The download
 
 This is what the platform is for. NoteForge collects and cleans the material; the notes

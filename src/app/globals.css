@@ -17,12 +17,160 @@
 
 :root {
   color-scheme: light;
+
+  /* One accent, used for the thing you are meant to press. It is the same teal
+     as the sign-in screen, so the app does not change character once you are
+     inside it — which is what it used to do. */
+  --nf-accent: #087f8c;
+  --nf-accent-strong: #066b76;
+  --nf-accent-wash: #e6f4f5;
+
+  --nf-border: #dfe7ee;
+  --nf-muted: #5c6b7a;
+
+  /* Radii and shadow live here rather than being retyped per component, which
+     is how six slightly different corner sizes end up on one screen. */
+  --nf-radius: 0.875rem;
+  --nf-radius-lg: 1.25rem;
+  --nf-shadow: 0 1px 2px rgba(16, 40, 64, 0.04), 0 10px 30px -22px rgba(16, 40, 64, 0.45);
 }
 
 body {
-  background: linear-gradient(180deg, #f8fafc 0%, #f3f7fa 100%);
+  background: #f7fafc;
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Controls.
+
+   These are plain classes rather than repeated utility strings because the
+   product is used all day by people who are not looking at it — they are
+   looking at a client. Every input behaving identically, with a focus ring
+   you cannot miss, is worth more here than styling flexibility.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.nf-field {
+  width: 100%;
+  border-radius: var(--nf-radius);
+  border: 1px solid var(--nf-border);
+  background: #fff;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--color-ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.nf-field::placeholder {
+  color: #94a3b8;
+}
+.nf-field:focus {
+  border-color: var(--nf-accent);
+  box-shadow: 0 0 0 3px rgba(8, 127, 140, 0.14);
+}
+
+/* Native selects lose their chevron the moment you restyle them, so it is
+   drawn back on. Without this the control reads as a dead text box. */
+select.nf-field {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%235c6b7a' stroke-width='1.6'%3E%3Cpath d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 1.15rem;
+  padding-right: 2.4rem;
+}
+
+.nf-label {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #1f2d3a;
+  margin-bottom: 0.35rem;
+}
+
+/* Helper text is deliberately quiet. The reasons behind these fields matter,
+   but a paragraph under every input is what made the old form feel heavy. */
+.nf-hint {
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--nf-muted);
+}
+
+.nf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: var(--nf-radius);
+  padding: 0.75rem 1.15rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+.nf-btn:disabled {
+  opacity: 0.6;
+}
+.nf-btn-primary {
+  background: var(--nf-accent);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(8, 127, 140, 0.3);
+}
+.nf-btn-primary:hover:not(:disabled) {
+  background: var(--nf-accent-strong);
+}
+.nf-btn-quiet {
+  border: 1px solid var(--nf-border);
+  background: #fff;
+  color: #1f2d3a;
+}
+.nf-btn-quiet:hover:not(:disabled) {
+  background: #f4f8fa;
+}
+
+.nf-card {
+  border-radius: var(--nf-radius-lg);
+  border: 1px solid var(--nf-border);
+  background: #fff;
+  box-shadow: var(--nf-shadow);
+}
+
+/* The writing surface.
+   Lifted off the page rather than outlined like a form field, because this is
+   the one thing on the screen a clinician is actually here to do. The accent
+   hairline along the top is the only decoration in the product. */
+.nf-surface {
+  position: relative;
+  border-radius: var(--nf-radius-lg);
+  border: 1px solid var(--nf-border);
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 40, 64, 0.04), 0 24px 60px -34px rgba(8, 60, 80, 0.55);
+}
+.nf-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  border-radius: var(--nf-radius-lg) var(--nf-radius-lg) 0 0;
+  background: linear-gradient(90deg, var(--nf-accent), #35b3c0 55%, #7fd4dc);
+}
+
+/* The box itself has no border: inside the surface card, a second outline just
+   draws a box in a box. It is sized to be written into, not filled in. */
+.nf-writing {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.25rem 0;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--color-ink);
+  outline: none;
+  resize: vertical;
+}
+.nf-writing::placeholder {
+  color: #9fb0bf;
 }
 
 ::selection {

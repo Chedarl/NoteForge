@@ -65,5 +65,18 @@ export async function requirePlatformAdminApi(): Promise<User | null> {
  * page, the middleware and the root page cannot disagree about it.
  */
 export function homeFor(role: UserRole): string {
-  return role === "THERAPIST" ? "/t" : "/s";
+  /*
+   * An owner lands on the writing screen, not the internal queue.
+   *
+   * This used to send everyone except a THERAPIST to `/s`, which is correct for
+   * a big practice where the owner is an administrator — and wrong for the way
+   * this product is actually signed up for, where the person registering is a
+   * clinician who came here to write updates. They were landing in a production
+   * queue with no link to the writing tool anywhere in its navigation, so the
+   * main feature was unreachable from the interface.
+   *
+   * A SPECIALIST still lands on the queue: producing notes from what arrives is
+   * their whole job. Owners can reach it from the nav.
+   */
+  return role === "SPECIALIST" ? "/s" : "/t/write";
 }
