@@ -49,14 +49,16 @@ export function QuickUpdate({
   clients,
   noteWriterNumber,
   whatsappReady,
+  canSaveDefault,
 }: {
   clients: QuickClient[];
   noteWriterNumber: string | null;
   whatsappReady: boolean;
+  /** Only an owner may change where the whole practice's documents go. */
+  canSaveDefault: boolean;
 }) {
   const [state, formAction, pending] = useActionState(submitQuickBatch, initial);
   const [occurredAt, setOccurredAt] = useState(nowLocal);
-  const [showSendTo, setShowSendTo] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([{ key: 0, name: "", narrative: "" }]);
 
   const update = (key: number, patch: Partial<Entry>) =>
@@ -103,7 +105,7 @@ export function QuickUpdate({
           )}
 
           {refused.length > 0 && (
-            <div className="rounded-[--nf-radius] border border-amber-300 bg-amber-50 px-4 py-3.5">
+            <div className="rounded-[var(--nf-radius)] border border-amber-300 bg-amber-50 px-4 py-3.5">
               <p className="text-sm font-semibold text-amber-900">
                 {refused.length} not filed
               </p>
@@ -156,7 +158,7 @@ export function QuickUpdate({
   return (
     <form action={formAction} className="mt-8 space-y-5">
       {state.error && (
-        <p className="rounded-[--nf-radius] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        <p className="rounded-[var(--nf-radius)] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
           {state.error}
         </p>
       )}
@@ -247,42 +249,36 @@ export function QuickUpdate({
       </p>
 
       {whatsappReady && (
-        <div className="rounded-[--nf-radius] border border-[color:var(--nf-border)] bg-white px-4 py-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-slate-700">
-              {noteWriterNumber ? (
-                <>
-                  Sending to <span className="font-medium">{noteWriterNumber}</span>
-                </>
-              ) : (
-                "No note-writer number is set for this practice."
-              )}
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowSendTo((v) => !v)}
-              className="text-sm font-medium text-[color:var(--nf-accent)] underline-offset-2 hover:underline"
-            >
-              {showSendTo ? "Use the usual number" : "Send somewhere else"}
-            </button>
-          </div>
+        <div className="rounded-[var(--nf-radius)] border border-[color:var(--nf-border)] bg-white px-4 py-3.5">
+          {/* An ordinary editable field, not a setting two screens away. Cover
+              arrangements and second note writers are normal; none of them
+              should need an administrator. */}
+          <label htmlFor="sendTo" className="nf-label">
+            Send to
+          </label>
+          <input
+            id="sendTo"
+            name="sendTo"
+            type="tel"
+            defaultValue={noteWriterNumber ?? ""}
+            placeholder="+1 415 555 0123"
+            className="nf-field"
+          />
+          <p className="nf-hint">
+            {noteWriterNumber
+              ? "Prefilled with your usual note writer. Change it to send this one somewhere else."
+              : "Any WhatsApp number, with its country code."}
+          </p>
 
-          {showSendTo && (
-            <div className="mt-3">
-              <label htmlFor="sendTo" className="nf-label">
-                WhatsApp number for this round
-              </label>
+          {canSaveDefault && (
+            <label className="mt-2.5 flex cursor-pointer items-center gap-2.5 text-sm">
               <input
-                id="sendTo"
-                name="sendTo"
-                type="tel"
-                placeholder="+1 415 555 0123"
-                className="nf-field"
+                type="checkbox"
+                name="saveDefault"
+                className="size-4 accent-[color:var(--nf-accent)]"
               />
-              <p className="nf-hint">
-                Used for this send only — it is not saved over the practice&rsquo;s number.
-              </p>
-            </div>
+              <span className="text-slate-700">Remember this as the usual number</span>
+            </label>
           )}
 
           <label className="mt-3 flex cursor-pointer items-start gap-2.5 border-t border-[color:var(--nf-border)] pt-3 text-sm">

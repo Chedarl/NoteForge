@@ -20,6 +20,8 @@ export default async function TherapistLayout({ children }: { children: React.Re
           { href: "/t/upload", label: "Photos" },
           { href: "/t/insights", label: "Insights" },
           { href: "/t/profile", label: "Profile" },
+          // The way back to the internal side, for an owner who is both.
+          ...(user.role === "OWNER" ? [{ href: "/s", label: "Queue" }] : []),
         ]}
         right={
           <form action={logout} className="flex items-center gap-3">

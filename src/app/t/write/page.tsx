@@ -17,19 +17,36 @@ export const dynamic = "force-dynamic";
 export default async function WritePage() {
   const user = await requireRole(["THERAPIST", "OWNER"]);
 
-  const [clients, practice] = await Promise.all([
-    prisma.client.findMany({
-      where: {
-        practiceId: user.practiceId,
-        ...(user.role === "THERAPIST" ? { primaryTherapistId: user.id } : {}),
-      },
-      orderBy: [{ status: "asc" }, { lastEncounterAt: "desc" }],
-    }),
-    prisma.practice.findUnique({
+  const clients = await prisma.client.findMany({
+    where: {
+      practiceId: user.practiceId,
+      ...(user.role === "THERAPIST" ? { primaryTherapistId: user.id } : {}),
+    },
+    orderBy: [{ status: "asc" }, { lastEncounterAt: "desc" }],
+  });
+
+  /*
+   * `noteWriterWhatsApp` arrived in a later migration, so a database that was
+   * created and then never migrated answers every other query happily and
+   * throws only here. That produced a blank "a server-side exception has
+   * occurred" on the one screen the product exists for, while the rest of the
+   * app looked fine — which reads as "the app is broken" rather than
+   * "migrations were not run".
+   *
+   * Caught, so the screen still renders and says what to do. Not swallowed:
+   * `migrationsPending` puts a banner at the top rather than letting somebody
+   * type a round into a database that cannot store it.
+   */
+  let practice: { noteWriterWhatsApp: string | null } | null = null;
+  let migrationsPending = false;
+  try {
+    practice = await prisma.practice.findUnique({
       where: { id: user.practiceId },
       select: { noteWriterWhatsApp: true },
-    }),
-  ]);
+    });
+  } catch {
+    migrationsPending = true;
+  }
 
   // Only the name goes into the picker. `labelOf` prefixes the code, which is
   // right everywhere else but would put "RVN-0142 · Smith J" into a box the
@@ -53,6 +70,18 @@ export default async function WritePage() {
         whoever writes the notes.
       </p>
 
+      {migrationsPending && (
+        <div className="mt-6 rounded-[var(--nf-radius)] border border-amber-300 bg-amber-50 px-4 py-3.5 text-sm text-amber-900">
+          <p className="font-semibold">This deployment is not fully set up.</p>
+          <p className="mt-1">
+            The database is reachable but is missing the latest tables, so updates cannot be
+            saved yet. Run <code className="font-mono">npx prisma migrate deploy</code>{" "}
+            against it. <a href="/api/health" className="underline">/api/health</a> shows
+            exactly what is configured.
+          </p>
+        </div>
+      )}
+
       {/*
         No "add a client first" gate. There used to be one, and it was the exact
         step the paper process does not have: a clinician with a page of updates
@@ -63,6 +92,7 @@ export default async function WritePage() {
         clients={options}
         noteWriterNumber={practice?.noteWriterWhatsApp ?? null}
         whatsappReady={whatsappConfigured()}
+        canSaveDefault={user.role === "OWNER"}
       />
     </div>
   );

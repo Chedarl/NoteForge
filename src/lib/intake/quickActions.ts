@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { submitEncounter } from "@/lib/intake/submit";
 import { buildSubmissionPdf, buildBatchPdf } from "@/lib/export/submissionPdf";
 import { sendDocument, sendFailureMessage, whatsappConfigured } from "@/lib/whatsapp/send";
+import { normalizeWhatsAppNumber } from "@/lib/sharing/phone";
 import { writeAudit } from "@/lib/audit";
 import { logSafe } from "@/lib/redact";
 import { resolveClientByName } from "@/lib/clients/resolve";
@@ -216,8 +217,48 @@ export async function submitQuickBatch(
     where: { id: user.practiceId },
     select: { noteWriterWhatsApp: true },
   });
+  /*
+   * The destination is the clinician's to choose, every time. It is prefilled
+   * with the practice's usual note writer because that is what it is nine times
+   * out of ten, but it is an ordinary editable field and not a setting buried
+   * two screens away: cover arrangements, a second note writer and "send this
+   * one to me instead" are all normal, and none of them should require an admin.
+   */
   const sendToRaw = String(formData.get("sendTo") ?? "").trim();
   const destination = sendToRaw || practice?.noteWriterWhatsApp || null;
+
+  if (destination && !normalizeWhatsAppNumber(destination)) {
+    return {
+      error: "That WhatsApp number does not look right. Use the international form, like +1 415 555 0123.",
+    };
+  }
+
+  /*
+   * Saving it as the practice default is deliberately owner-only. A per-send
+   * number affects one document; the default silently redirects every future
+   * one, and a colleague changing where the whole practice's clinical material
+   * goes is not something that should happen from a checkbox on an update form.
+   */
+  if (formData.get("saveDefault") === "on" && sendToRaw && user.role === "OWNER") {
+    const normalised = normalizeWhatsAppNumber(sendToRaw);
+    if (normalised && normalised !== practice?.noteWriterWhatsApp) {
+      await prisma.practice.update({
+        where: { id: user.practiceId },
+        data: { noteWriterWhatsApp: normalised },
+      });
+      await writeAudit({
+        practiceId: user.practiceId,
+        actor: user,
+        action: "practice.note_writer_number_set",
+        entityType: "user",
+        entityId: user.id,
+        entityLabel: user.fullName,
+        // The number is not logged: an audit row is read by more people than a
+        // settings screen, and the destination changing is the fact that matters.
+        changes: { noteWriterWhatsApp: { from: practice?.noteWriterWhatsApp ? "set" : "unset", to: "set" } },
+      });
+    }
+  }
 
   let whatsapp: { sent: boolean; message: string } | null = null;
   if (whatsappConfigured()) {
