@@ -130,6 +130,22 @@ exported section read `_not recorded_`.
 To run server-only code in a script: `npx tsx --conditions=react-server <file>`, and put
 the file inside the project so `@/` and `@prisma/client` resolve.
 
+### Migrations run themselves on deploy
+
+`npm run build` runs `scripts/migrate-on-deploy.mjs` between `prisma generate`
+and `next build`, so the database serving a deployment is migrated by that same
+deployment. This exists because the two went out of step in production and
+stayed there: code shipped on every push, migrations only when somebody
+remembered. Three separate screens died with blank server errors before the
+cause was found, and each looked like a different bug.
+
+A failed migration **warns loudly and lets the build continue**. Blocking every
+deployment on a database hiccup would also block the deployment that fixes it,
+and the app already detects an out-of-date schema and explains it — `/api/health`
+reports `schemaUpToDate`, and the write, signup and settings screens each say so
+rather than crashing. Without `DIRECT_URL` it skips entirely, so building
+locally does not migrate anything as a side effect.
+
 ### Migrations
 
 `pg_trgm` and the GIN trigram index are declared in `schema.prisma` (via the
