@@ -69,6 +69,9 @@ src/lib/export/changes.ts  "what changed since last submission", derived and not
 src/lib/whatsapp/send.ts   sends the PDF to the note writer — read the header first
 src/lib/intake/quickActions.ts the write-and-send path, thin over submitEncounter
 src/lib/clients/resolve.ts a typed name finds or creates the client — read the header
+src/lib/export/rosterPdf.tsx the caseload as a document — who is still open
+src/lib/clients/roster.ts  builds and sends the client list
+src/app/api/health/route.ts is this deployment wired up? booleans, never values
 src/lib/insights/          metrics as live Prisma aggregates
 src/app/t/                 clinician portal (mobile-first)
 src/app/s/                 internal workspace: queue, verify, note, download, insights, audit
