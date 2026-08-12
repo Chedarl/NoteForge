@@ -1,8 +1,6 @@
-import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { STATUS_CLASS, STATUS_LABEL } from "@/lib/clients/labels";
 import type { ClientStatus } from "@prisma/client";
-import BrandLogo from "@/components/shared/BrandLogo";
 
 /**
  * The small shared kit. Deliberately tiny — six primitives and no component
@@ -18,9 +16,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-xl border border-slate-200/90 bg-white p-4 shadow-[0_8px_28px_-20px_rgba(5,30,65,0.5)]", className)}>
-      {children}
-    </div>
+    <div className={cn("nf-card p-5", className)}>{children}</div>
   );
 }
 
@@ -117,39 +113,4 @@ export function EmptyState({ title, body }: { title: string; body: string }) {
   );
 }
 
-export function Nav({
-  items,
-  current,
-  right,
-}: {
-  items: { href: string; label: string }[];
-  current: string;
-  right?: React.ReactNode;
-}) {
-  return (
-    <header className="border-b border-white/10 bg-[#020713] text-white shadow-sm">
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2.5">
-        <BrandLogo className="w-32 shrink-0 rounded-md sm:w-40" />
-        <nav className="flex flex-1 flex-wrap gap-x-4 gap-y-1 text-sm">
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "rounded px-2 py-1",
-                current === item.href
-                  ? "bg-white text-slate-950"
-                  : "text-slate-300 hover:bg-white/10 hover:text-white"
-              )}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <div className="text-slate-300 [&_button]:text-slate-300 [&_span]:text-slate-300">
-          {right}
-        </div>
-      </div>
-    </header>
-  );
-}
+export { Nav } from "@/components/shared/Nav";

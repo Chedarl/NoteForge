@@ -180,6 +180,8 @@ immediately.
 | --- | --- |
 | Clinicians create their own accounts and log in | **DONE** — `/signup` |
 | One simple box: write what was discussed | **DONE** — `/t/write`, over the `NARRATIVE` template |
+| Enter a client by **name**, not by picking a record | **DONE** — `src/lib/clients/resolve.ts`. A typed "Smith J" finds that client or creates one with the next practice code. There is no "add the client first" step, because the paper process being replaced does not have one |
+| Send to a chosen WhatsApp number | **DONE** — defaults to `Practice.noteWriterWhatsApp`; a number typed on the form overrides it **for that send only** and is not saved over the practice's |
 | Carries the date **and time** of the encounter | **DONE** — `datetime-local`, defaulting to now |
 | Becomes a PDF immediately | **DONE** — built in the same request, not queued |
 | Sent over WhatsApp immediately | **DONE** — `src/lib/whatsapp/send.ts` sends the document to `Practice.noteWriterWhatsApp` via the Meta Cloud API. **Not exercised against the live API** — `graph.facebook.com` is refused by the build environment's egress policy |

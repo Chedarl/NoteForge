@@ -68,6 +68,7 @@ src/lib/export/submissionPdf.ts assembles the PDF from the database; pdf.tsx sta
 src/lib/export/changes.ts  "what changed since last submission", derived and not judged
 src/lib/whatsapp/send.ts   sends the PDF to the note writer — read the header first
 src/lib/intake/quickActions.ts the write-and-send path, thin over submitEncounter
+src/lib/clients/resolve.ts a typed name finds or creates the client — read the header
 src/lib/insights/          metrics as live Prisma aggregates
 src/app/t/                 clinician portal (mobile-first)
 src/app/s/                 internal workspace: queue, verify, note, download, insights, audit

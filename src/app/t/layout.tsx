@@ -11,15 +11,16 @@ export default async function TherapistLayout({ children }: { children: React.Re
     <div className="min-h-screen">
       <Nav
         items={[
-          { href: "/t", label: "My clients" },
-          // First, because it is the thing most clinicians open the app to do.
-          { href: "/t/write", label: "Write an update" },
-          { href: "/t/new", label: "Structured note" },
-          { href: "/t/upload", label: "Photograph paper" },
+          // Short labels on purpose: six long ones wrapped the bar onto three
+          // rows on a phone and pushed the actual work below the fold.
+          // "Write" is first because it is what most clinicians open the app for.
+          { href: "/t/write", label: "Write" },
+          { href: "/t", label: "Clients" },
+          { href: "/t/new", label: "Structured" },
+          { href: "/t/upload", label: "Photos" },
           { href: "/t/insights", label: "Insights" },
-          { href: "/t/profile", label: "Your discipline" },
+          { href: "/t/profile", label: "Profile" },
         ]}
-        current=""
         right={
           <form action={logout} className="flex items-center gap-3">
             <span className="hidden text-xs text-slate-500 sm:inline">{user.fullName}</span>

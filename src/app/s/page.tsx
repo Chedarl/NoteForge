@@ -139,29 +139,49 @@ export default async function Queue({
             const unverifiedPages = submission.pages.filter((p) => !p.verifiedText).length;
 
             return (
-              <Card key={submission.id} className="space-y-2">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className="font-medium">{submission.client.clientCode}</span>
-                  <span className="text-xs text-slate-500">
+              /*
+               * Three tiers, not one line of eight competing chips.
+               *
+               * The identity is what a specialist scans for, so it is the only
+               * thing at full size. Everything else — discipline, template,
+               * source, who sent it — is context they read once they have found
+               * the row, so it drops to one quiet line underneath. The waiting
+               * time is pulled right and is the only thing allowed to go amber,
+               * because turnaround is the number this service is judged on.
+               */
+              <Card key={submission.id} className="space-y-3">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                  <span className="text-[0.95rem] font-semibold tracking-tight">
+                    {submission.client.clientCode}
+                  </span>
+                  <span className="text-sm text-slate-500">
                     {identityOf(submission.client).displayName ?? submission.client.initials}
                   </span>
                   <StatusBadge status={submission.client.status} />
-                  {submission.discipline ? (
-                    <Pill tone="sky">{DISCIPLINE_LABEL[submission.discipline]}</Pill>
-                  ) : null}
-                  <Pill>{submission.templateKind.replace(/_/g, " ").toLowerCase()}</Pill>
-                  <Pill tone={submission.kind === "PHOTO" ? "amber" : "slate"}>
-                    {submission.kind === "PHOTO" ? "Photographed" : "Typed"}
-                  </Pill>
-                  <span className="text-xs text-slate-500">
-                    Session {fmtDate(submission.encounterDate)} · waiting{" "}
-                    <span className={overdue ? "font-medium text-amber-700" : ""}>
+                  <span className="ml-auto text-xs text-slate-500">
+                    waiting{" "}
+                    <span className={overdue ? "font-semibold text-amber-700" : "font-medium"}>
                       {ageLabel(submission.createdAt)}
                     </span>
                   </span>
-                  <span className="ml-auto text-xs text-slate-500">
-                    from {submission.submittedBy.fullName}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                  {submission.discipline ? (
+                    <>
+                      <span>{DISCIPLINE_LABEL[submission.discipline]}</span>
+                      <span aria-hidden>·</span>
+                    </>
+                  ) : null}
+                  <span className="capitalize">
+                    {submission.templateKind.replace(/_/g, " ").toLowerCase()}
                   </span>
+                  <span aria-hidden>·</span>
+                  <span>{submission.kind === "PHOTO" ? "Photographed" : "Typed"}</span>
+                  <span aria-hidden>·</span>
+                  <span>Session {fmtDate(submission.encounterDate)}</span>
+                  <span aria-hidden>·</span>
+                  <span>from {submission.submittedBy.fullName}</span>
                 </div>
 
                 {submission.flags.length > 0 ? (
@@ -177,25 +197,25 @@ export default async function Queue({
                   </ul>
                 ) : null}
 
-                <div className="flex gap-3 text-sm">
+                <div className="flex flex-wrap gap-2 pt-0.5 text-sm">
                   {submission.state === "NEEDS_VERIFY" ? (
                     <Link
                       href={`/s/verify/${submission.id}`}
-                      className="font-medium text-sky-700 underline"
+                      className="nf-btn nf-btn-primary px-3.5 py-2 text-sm"
                     >
                       Verify {unverifiedPages} page{unverifiedPages === 1 ? "" : "s"}
                     </Link>
                   ) : submission.state === "BLOCKED" ? (
                     <Link
                       href={`/s/clients/${submission.client.id}`}
-                      className="font-medium text-sky-700 underline"
+                      className="nf-btn nf-btn-primary px-3.5 py-2 text-sm"
                     >
                       Reconcile the client status
                     </Link>
                   ) : (
                     <Link
                       href={`/s/note/${submission.id}`}
-                      className="font-medium text-sky-700 underline"
+                      className="nf-btn nf-btn-primary px-3.5 py-2 text-sm"
                     >
                       {submission.state === "IN_PROGRESS" ? "Continue note" : "Write note"}
                     </Link>
@@ -212,7 +232,7 @@ export default async function Queue({
                     href={`/api/export/submission/${submission.id}`}
                     target="_blank"
                     rel="noopener"
-                    className="font-medium text-slate-600 underline"
+                    className="nf-btn nf-btn-quiet px-3.5 py-2 text-sm"
                   >
                     Download PDF
                   </a>

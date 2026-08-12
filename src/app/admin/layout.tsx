@@ -13,7 +13,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           { href: "/admin", label: "Platform overview" },
           { href: "/s", label: "Practice workspace" },
         ]}
-        current="/admin"
         right={
           <form action={logout} className="flex items-center gap-3">
             <span className="hidden text-xs text-slate-500 sm:inline">{admin.fullName} · Admin</span>

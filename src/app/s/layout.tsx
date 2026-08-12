@@ -20,7 +20,6 @@ export default async function SpecialistLayout({ children }: { children: React.R
     <div className="min-h-screen">
       <Nav
         items={items}
-        current=""
         right={
           <form action={logout} className="flex items-center gap-3">
             <span className="hidden text-xs text-slate-500 sm:inline">

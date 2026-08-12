@@ -1,10 +1,8 @@
 import { requireRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
-import { labelOf } from "@/lib/clients/identity";
+import { identityOf } from "@/lib/clients/identity";
 import { whatsappConfigured } from "@/lib/whatsapp/send";
 import { QuickUpdate, type QuickClient } from "@/components/therapist/QuickUpdate";
-import { EmptyState } from "@/components/shared/ui";
-import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -33,37 +31,39 @@ export default async function WritePage() {
     }),
   ]);
 
-  const options: QuickClient[] = clients.map((client) => ({
-    id: client.id,
-    label: labelOf(client),
-    status: client.status,
-  }));
+  // Only the name goes into the picker. `labelOf` prefixes the code, which is
+  // right everywhere else but would put "RVN-0142 · Smith J" into a box the
+  // clinician is meant to type a name into.
+  const options: QuickClient[] = clients.map((client) => {
+    const identity = identityOf(client);
+    return {
+      id: client.id,
+      label: identity.displayName ?? client.initials,
+      code: client.clientCode,
+    };
+  });
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold tracking-tight">Write an update</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        Say what happened in your own words. It is saved with the date and time, turned into
-        a PDF, and sent to whoever writes the notes — the note gets written from that.
+      <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
+        Write an update
+      </h1>
+      <p className="mt-2 text-[0.95rem] leading-relaxed text-slate-600">
+        Say what happened in your own words. We turn it into a clean PDF and send it to
+        whoever writes the notes.
       </p>
 
-      {options.length === 0 ? (
-        <div className="mt-6">
-          <EmptyState
-            title="No clients yet"
-            body="Add a client before writing an update. They are identified by a practice code, not a name."
-          />
-          <Link href="/t/clients/new" className="mt-3 inline-block text-sm font-medium underline">
-            Add a client
-          </Link>
-        </div>
-      ) : (
-        <QuickUpdate
-          clients={options}
-          noteWriterNumber={practice?.noteWriterWhatsApp ?? null}
-          whatsappReady={whatsappConfigured()}
-        />
-      )}
+      {/*
+        No "add a client first" gate. There used to be one, and it was the exact
+        step the paper process does not have: a clinician with a page of updates
+        to file should not be sent to a different screen to create records
+        before they can write. An unknown name creates the client on submit.
+      */}
+      <QuickUpdate
+        clients={options}
+        noteWriterNumber={practice?.noteWriterWhatsApp ?? null}
+        whatsappReady={whatsappConfigured()}
+      />
     </div>
   );
 }

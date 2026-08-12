@@ -9,6 +9,7 @@ import { buildSubmissionPdf } from "@/lib/export/submissionPdf";
 import { sendDocument, sendFailureMessage, whatsappConfigured } from "@/lib/whatsapp/send";
 import { writeAudit } from "@/lib/audit";
 import { logSafe } from "@/lib/redact";
+import { resolveClientByName } from "@/lib/clients/resolve";
 
 /**
  * The quick update: type what was discussed, get a PDF, send it.
@@ -41,11 +42,14 @@ export interface QuickUpdateState {
     flagged: boolean;
     /** Null when delivery was not attempted because it is not configured. */
     whatsapp: { sent: boolean; message: string } | null;
+    /** Echoed back so the clinician can confirm they wrote about the right person. */
+    client: { code: string; label: string; created: boolean };
   };
 }
 
 const schema = z.object({
-  clientId: z.string().min(1),
+  /** A typed name — "Smith J" — or an existing client's code. */
+  clientName: z.string().trim().min(2),
   /**
    * The floor is the same eight characters the completeness gate uses. It
    * catches the empty box and the stray keystroke and nothing more — refereeing
@@ -54,6 +58,8 @@ const schema = z.object({
   narrative: z.string().trim().min(8),
   /** `datetime-local`, so the record carries the time as well as the day. */
   occurredAt: z.string().min(1),
+  /** Overrides the practice's note-writer number for this send only. */
+  sendTo: z.string().trim().optional(),
 });
 
 export async function submitQuickUpdate(
@@ -70,12 +76,13 @@ export async function submitQuickUpdate(
   }
 
   const parsed = schema.safeParse({
-    clientId: formData.get("clientId"),
+    clientName: formData.get("clientName"),
     narrative: formData.get("narrative"),
     occurredAt: formData.get("occurredAt"),
+    sendTo: formData.get("sendTo"),
   });
   if (!parsed.success) {
-    return { error: "Choose a client, give the date and time, and write what was discussed." };
+    return { error: "Give a client name, the date and time, and write what was discussed." };
   }
 
   const encounterDate = new Date(parsed.data.occurredAt);
@@ -88,9 +95,18 @@ export async function submitQuickUpdate(
 
   const includeName = formData.get("includeName") === "on";
 
+  // A typed name finds the client or creates one. This is what removes the
+  // "add the client first" step that the paper process does not have.
+  const resolved = await resolveClientByName({
+    practiceId: user.practiceId,
+    typedName: parsed.data.clientName,
+    therapistId: user.id,
+  });
+  if (!resolved.ok) return { error: resolved.error };
+
   const result = await submitEncounter({
     practiceId: user.practiceId,
-    clientId: parsed.data.clientId,
+    clientId: resolved.client.id,
     submittedBy: user,
     kind: "STRUCTURED",
     templateKind: "NARRATIVE",
@@ -134,11 +150,18 @@ export async function submitQuickUpdate(
     select: { noteWriterWhatsApp: true },
   });
 
+  // A number typed on the form wins for this send only. Nothing is saved from
+  // it: a one-off cover arrangement should not silently redirect the practice's
+  // documents from then on.
+  const destination = parsed.data.sendTo?.trim()
+    ? parsed.data.sendTo.trim()
+    : (practice?.noteWriterWhatsApp ?? null);
+
   const whatsapp = await deliver({
     user,
     pdf,
     submissionId: result.submissionId,
-    to: practice?.noteWriterWhatsApp ?? null,
+    to: destination,
   });
 
   return {
@@ -147,6 +170,11 @@ export async function submitQuickUpdate(
       filename: pdf.filename,
       flagged: result.flagged,
       whatsapp,
+      client: {
+        code: resolved.client.clientCode,
+        label: resolved.client.label,
+        created: resolved.client.created,
+      },
     },
   };
 }
