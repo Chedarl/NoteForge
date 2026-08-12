@@ -23,11 +23,12 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      # Prisma reads these at generate time. They point nowhere and are never
-      # connected to — the build does not touch a database, every data page is
-      # rendered on demand.
+      # The build applies migrations now, so these are connected to for real.
+      # `ci` is the database the build migrates; `shadow` is kept empty for the
+      # drift check below, which is why they cannot be the same one.
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
       DIRECT_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      SHADOW_DATABASE_URL: postgresql://ci:ci@localhost:5432/shadow?schema=public
       NEXT_PUBLIC_SUPABASE_URL: https://ci.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
 
@@ -45,6 +46,17 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
 
+      - name: Create the shadow database
+        # Separate from DATABASE_URL, and that separation is the whole point.
+        # `migrate diff` replays every migration into the shadow database from
+        # nothing, so it has to start empty. Once the build began applying
+        # migrations to DATABASE_URL, pointing the check at that same database
+        # failed with P3006 on the very first migration — a real CI failure
+        # that looked like schema drift and was not.
+        env:
+          PGPASSWORD: ci
+        run: psql -h localhost -p 5432 -U ci -d ci -c 'CREATE DATABASE shadow;'
+
       - name: Migration matches schema
         # Catches the commonest way a migration drifts: someone edits
         # schema.prisma and forgets the SQL, so `migrate deploy` produces a
@@ -53,7 +65,7 @@ jobs:
           npx prisma migrate diff \
             --from-migrations prisma/migrations \
             --to-schema-datamodel prisma/schema.prisma \
-            --shadow-database-url "$DATABASE_URL" \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
             --exit-code || {
               echo "prisma/migrations is out of date with prisma/schema.prisma"
               exit 1

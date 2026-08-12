@@ -130,6 +130,58 @@ exported section read `_not recorded_`.
 To run server-only code in a script: `npx tsx --conditions=react-server <file>`, and put
 the file inside the project so `@/` and `@prisma/client` resolve.
 
+### Migrations run themselves on deploy
+
+`npm run build` runs `scripts/migrate-on-deploy.mjs` between `prisma generate`
+and `next build`, so the database serving a deployment is migrated by that same
+deployment. This exists because the two went out of step in production and
+stayed there: code shipped on every push, migrations only when somebody
+remembered. Three separate screens died with blank server errors before the
+cause was found, and each looked like a different bug.
+
+A failed migration **warns loudly and lets the build continue**. Blocking every
+deployment on a database hiccup would also block the deployment that fixes it,
+and the app already detects an out-of-date schema and explains it — `/api/health`
+reports `schemaUpToDate`, and the write, signup and settings screens each say so
+rather than crashing. Without `DIRECT_URL` it skips entirely, so building
+locally does not migrate anything as a side effect.
+
+It also skips on **Vercel preview builds** (`VERCEL_ENV` set to anything but
+`production`). One Supabase project sits behind every environment, so a preview
+shares the production database — and a preview is built from a branch nobody has
+merged. Ungated, opening a pull request would apply that branch's migrations to
+the live database, and a migration that drops a column would break production
+while the change was still being discussed. `VERCEL_ENV` is unset off Vercel, so
+CI and self-hosted builds still migrate the database they were handed.
+
+**The shadow database must never be the one the build migrates.** `migrate diff`
+replays every migration into its shadow from nothing, and it *resets that
+database first* — so pointing it at `DATABASE_URL` both fails with P3006 and
+wipes the schema the build just applied. CI creates a separate `shadow` database
+for this; locally it is the second database in the setup above. This bit CI the
+moment the build started migrating, and the failure reads as schema drift when
+it is nothing of the kind.
+
+### A schema lag takes down every page, not the ones you would guess
+
+`getSessionUser` selects the whole `User` row, and `requireRole` — which every
+page and every server action goes through — calls it. So a database missing any
+recent `User` column throws P2022 *there*, and the entire signed-in product dies
+with a blank "server-side exception", the root redirect included.
+
+This cost a lot of time because the symptoms name the wrong thing. Per-screen
+"migrations pending" banners were added to `/t/write` and `/s/settings` and
+appeared to do nothing at all: both screens crash inside `requireRole`, several
+frames before their own first line runs. Anything that has to stay reachable
+while the schema is behind belongs *above* the session layer, not inside a page.
+
+The session layer now raises `SchemaBehindError` (`src/lib/db/schemaLag.ts`) and
+redirects to `/setup-required`, which is unauthenticated for the same reason
+`/api/health` is: the condition being reported is the one that breaks signing in.
+It fails closed — nobody is admitted on a lagging schema — because carrying on
+with defaults for the missing columns keeps the app looking usable while writes
+fail deeper in, which relocates the confusion rather than ending it.
+
 ### Migrations
 
 `pg_trgm` and the GIN trigram index are declared in `schema.prisma` (via the

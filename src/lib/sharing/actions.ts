@@ -1,14 +1,12 @@
 "use server";
 
-import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
-import { createAdminClient, BUCKET_EXPORTS } from "@/lib/supabase/admin";
 import { buildSubmissionPdf, buildBatchPdf } from "@/lib/export/submissionPdf";
 import { normalizeWhatsAppNumber } from "@/lib/sharing/phone";
+import { storeSharedPdf, whatsappHandoff } from "@/lib/sharing/store";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { siteUrl } from "@/lib/email/send";
-import { writeAudit } from "@/lib/audit";
 import { logSafe } from "@/lib/redact";
 
 export interface ShareState {
@@ -92,81 +90,37 @@ export async function createWhatsAppShare(
     return { error: "The PDF could not be prepared. Please try again." };
   }
 
-  const token = randomBytes(32).toString("base64url");
-  const tokenHash = createHash("sha256").update(token).digest("hex");
-  const ttlHours = shareTtlHours();
-  const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
-  // Random path so the object key leaks nothing; the §5 filename rides on the
-  // download response instead.
-  const key = `${user.practiceId}/shares/${randomUUID()}.pdf`;
-  const storagePath = `${BUCKET_EXPORTS}/${key}`;
-  const admin = createAdminClient();
-
-  const { error: uploadError } = await admin.storage.from(BUCKET_EXPORTS).upload(key, bytes, {
-    contentType: "application/pdf",
-    cacheControl: "0",
-    upsert: false,
+  /*
+   * Stored through `storeSharedPdf` rather than here.
+   *
+   * This used to keep its own copy of the whole procedure — token, hash, random
+   * key, upload, ShareLink row, compensating delete, audit entry — and the copy
+   * drifted. Its failure messages were the generic "Please try again", which is
+   * advice that cannot work for either of the two things that actually go wrong
+   * on a fresh deployment: no Supabase secret key, and no `note-exports` bucket.
+   * Both are permanent until somebody changes the deployment, and the shared
+   * helper says so by name.
+   */
+  const stored = await storeSharedPdf({
+    user,
+    bytes,
+    documentKind: "submission",
+    submissionId: submission.id,
+    auditLabel: submission.client.clientCode,
   });
-  if (uploadError) {
-    logSafe("share", "private PDF upload failed", { submissionId, error: uploadError.message });
-    return { error: "The secure PDF could not be stored. Please try again." };
-  }
+  if (!stored.ok) return { error: stored.error };
 
-  let shareId: string;
-  try {
-    const share = await prisma.shareLink.create({
-      data: {
-        tokenHash,
-        practiceId: user.practiceId,
-        submissionId: submission.id,
-        documentKind: "submission",
-        createdById: user.id,
-        storagePath,
-        expiresAt,
-      },
-    });
-    shareId = share.id;
-  } catch (error) {
-    await admin.storage.from(BUCKET_EXPORTS).remove([key]);
-    logSafe("share", "share record creation failed", {
-      submissionId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return { error: "The secure link could not be created. Please try again." };
-  }
-
-  await writeAudit({
-    practiceId: user.practiceId,
-    actor: user,
-    action: "share.created",
-    entityType: "share",
-    entityId: shareId,
-    entityLabel: submission.client.clientCode,
-    changes: { expiresAt: { from: null, to: expiresAt.toISOString() } },
+  const { whatsappUrl, downloadUrl } = whatsappHandoff({
+    phone,
+    siteUrl: siteUrl(),
+    token: stored.share.token,
+    ttlHours: stored.share.ttlHours,
+    lead: "A secure NoteForge PDF is ready for note production.",
   });
-
-  const downloadUrl = `${siteUrl()}/share/${token}`;
-  const message = [
-    "A secure NoteForge PDF is ready for note production.",
-    `The link expires in ${ttlHours} hours and is limited to 10 downloads.`,
-    downloadUrl,
-  ].join("\n\n");
-  const digits = phone?.replace(/\D/g, "") ?? "";
-  const whatsappUrl = `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 
   return {
-    success: {
-      whatsappUrl,
-      downloadUrl,
-      expiresAt: expiresAt.toISOString(),
-    },
+    success: { whatsappUrl, downloadUrl, expiresAt: stored.share.expiresAt.toISOString() },
   };
-}
-
-function shareTtlHours(): number {
-  const configured = Number(process.env.PDF_SHARE_TTL_HOURS ?? "24");
-  if (!Number.isFinite(configured)) return 24;
-  return Math.min(168, Math.max(1, Math.floor(configured)));
 }
 
 /**
@@ -253,74 +207,30 @@ export async function createRoundWhatsAppShare(
     return { error: "The PDF could not be prepared. Please try again." };
   }
 
-  const token = randomBytes(32).toString("base64url");
-  const tokenHash = createHash("sha256").update(token).digest("hex");
-  const ttlHours = shareTtlHours();
-  const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
-  const key = `${user.practiceId}/shares/${randomUUID()}.pdf`;
-  const storagePath = `${BUCKET_EXPORTS}/${key}`;
-  const admin = createAdminClient();
-
-  const { error: uploadError } = await admin.storage.from(BUCKET_EXPORTS).upload(key, bytes, {
-    contentType: "application/pdf",
-    cacheControl: "0",
-    upsert: false,
+  const stored = await storeSharedPdf({
+    user,
+    bytes,
+    documentKind: submissions.length === 1 ? "submission" : "round",
+    // Anchored to the first submission because a round has no single one of its
+    // own. The stored object is the whole round; the anchor exists so revoking
+    // and auditing have something concrete to point at.
+    submissionId: submissions[0].id,
+    auditLabel: submissions.map((s) => s.client.clientCode).join(", "),
   });
-  if (uploadError) {
-    logSafe("share", "round PDF upload failed", { error: uploadError.message });
-    return { error: "The secure PDF could not be stored. Please try again." };
-  }
+  if (!stored.ok) return { error: stored.error };
 
-  let shareId: string;
-  try {
-    const share = await prisma.shareLink.create({
-      data: {
-        tokenHash,
-        practiceId: user.practiceId,
-        // Anchored to the first submission because a round has no single one
-        // of its own. The stored object is the whole round; the anchor exists
-        // so revoking and auditing have something concrete to point at.
-        submissionId: submissions[0].id,
-        documentKind: submissions.length === 1 ? "submission" : "round",
-        createdById: user.id,
-        storagePath,
-        expiresAt,
-      },
-    });
-    shareId = share.id;
-  } catch (error) {
-    await admin.storage.from(BUCKET_EXPORTS).remove([key]);
-    logSafe("share", "round share record creation failed", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return { error: "The secure link could not be created. Please try again." };
-  }
-
-  await writeAudit({
-    practiceId: user.practiceId,
-    actor: user,
-    action: "share.created",
-    entityType: "share",
-    entityId: shareId,
-    entityLabel: submissions.map((s) => s.client.clientCode).join(", "),
-    changes: {
-      expiresAt: { from: null, to: expiresAt.toISOString() },
-      clients: { from: null, to: String(submissions.length) },
-    },
+  const { whatsappUrl, downloadUrl } = whatsappHandoff({
+    phone,
+    siteUrl: siteUrl(),
+    token: stored.share.token,
+    ttlHours: stored.share.ttlHours,
+    lead:
+      submissions.length === 1
+        ? "A secure NoteForge PDF is ready for note production."
+        : `A secure NoteForge PDF with ${submissions.length} client updates is ready for note production.`,
   });
-
-  const downloadUrl = `${siteUrl()}/share/${token}`;
-  const message = [
-    submissions.length === 1
-      ? "A secure NoteForge PDF is ready for note production."
-      : `A secure NoteForge PDF with ${submissions.length} client updates is ready for note production.`,
-    `The link expires in ${ttlHours} hours and is limited to 10 downloads.`,
-    downloadUrl,
-  ].join("\n\n");
-  const digits = phone?.replace(/\D/g, "") ?? "";
-  const whatsappUrl = `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 
   return {
-    success: { whatsappUrl, downloadUrl, expiresAt: expiresAt.toISOString() },
+    success: { whatsappUrl, downloadUrl, expiresAt: stored.share.expiresAt.toISOString() },
   };
 }
