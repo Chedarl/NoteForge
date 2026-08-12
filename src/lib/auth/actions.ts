@@ -192,6 +192,24 @@ export async function signup(
       authUserId,
       error: provisionError instanceof Error ? provisionError.message : String(provisionError),
     });
+
+    /*
+     * The commonest cause on a fresh deployment is not a bug in this code: the
+     * database exists but the migrations were never run against it, so
+     * `User.isPlatformAdmin` and the `ShareLink` table are simply absent. Every
+     * signup then fails identically and "please try again" sends people round
+     * the same loop forever.
+     *
+     * P2021 is a missing table and P2022 a missing column, so the two together
+     * identify exactly that state and nothing else.
+     */
+    if (isMissingSchema(provisionError)) {
+      return {
+        error:
+          "This deployment's database has not been set up yet — the tables are missing. An administrator needs to run the database migrations. Check /api/health for what is configured.",
+      };
+    }
+
     return { error: "Your workspace could not be created. Nothing was charged; please try again." };
   }
 
@@ -249,6 +267,19 @@ function makePracticeCode(name: string): string {
   const fallback = words.join("").slice(0, 3);
   const prefix = (initials || fallback || "NF").padEnd(2, "X");
   return `${prefix}-${randomBytes(2).toString("hex").toUpperCase()}`;
+}
+
+/** A table or column the code expects is not in the database yet. */
+function isMissingSchema(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return error.code === "P2021" || error.code === "P2022";
+  }
+  // Prisma reports some of these as an initialisation or validation failure
+  // rather than a known request error, so the message is the only signal.
+  const message = error instanceof Error ? error.message : String(error);
+  return /does not exist in the current database|column .* does not exist|relation .* does not exist/i.test(
+    message
+  );
 }
 
 function isPracticeCodeCollision(error: unknown): boolean {

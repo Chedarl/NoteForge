@@ -11,12 +11,27 @@ import type { TemplateKind } from "@prisma/client";
 type ClaimedShare = {
   id: string;
   practiceId: string;
-  submissionId: string;
+  submissionId: string | null;
+  documentKind: string;
   storagePath: string;
 };
 
 /** The §5 filename, rebuilt from the submission. Falls back if it has gone. */
-async function shareFilename(submissionId: string, practiceId: string): Promise<string> {
+async function shareFilename(
+  submissionId: string | null,
+  practiceId: string,
+  documentKind: string
+): Promise<string> {
+  // A client list has no submission to name itself after, and a round is named
+  // by its first one only for the anchor's sake — neither should borrow the §5
+  // per-submission filename, which is meant to be split apart by a machine.
+  if (!submissionId || documentKind !== "submission") {
+    const day = new Date().toISOString().slice(0, 10);
+    return documentKind === "roster"
+      ? `noteforge_${day}_client-list.pdf`
+      : `noteforge_${day}_client-updates.pdf`;
+  }
+
   const submission = await prisma.submission.findFirst({
     where: { id: submissionId, practiceId },
     select: {
@@ -44,8 +59,16 @@ export async function GET(
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return unavailable();
   const tokenHash = createHash("sha256").update(token).digest("hex");
 
-  // One atomic claim enforces expiry and the download ceiling even when two
-  // recipients tap the WhatsApp link at the same moment.
+  /*
+   * One atomic claim enforces expiry and the download ceiling even when two
+   * recipients tap the link at the same moment.
+   *
+   * This lives on `/download` rather than on the link itself because messengers
+   * prefetch URLs to build preview cards. When the claim was on the link, every
+   * preview spent one of the ten downloads and a link could be dead before the
+   * recipient ever tapped it. Viewing the landing page is free; arriving here is
+   * a deliberate act.
+   */
   const rows = await prisma.$queryRaw<ClaimedShare[]>(Prisma.sql`
     UPDATE "ShareLink"
     SET "downloadCount" = "downloadCount" + 1,
@@ -54,7 +77,7 @@ export async function GET(
       AND "revokedAt" IS NULL
       AND "expiresAt" > CURRENT_TIMESTAMP
       AND "downloadCount" < "maxDownloads"
-    RETURNING "id", "practiceId", "submissionId", "storagePath"
+    RETURNING "id", "practiceId", "submissionId", "storagePath", "documentKind"
   `);
   const share = rows[0];
   if (!share) return unavailable();
@@ -75,7 +98,7 @@ export async function GET(
     action: "share.downloaded",
     entityType: "share",
     entityId: share.id,
-    entityLabel: share.submissionId,
+    entityLabel: share.submissionId ?? share.documentKind,
   });
 
   /*
@@ -86,7 +109,7 @@ export async function GET(
    * key stays random on purpose, so the name is rebuilt here rather than
    * exposing the storage path.
    */
-  const filename = await shareFilename(share.submissionId, share.practiceId);
+  const filename = await shareFilename(share.submissionId, share.practiceId, share.documentKind);
 
   const bytes = await data.arrayBuffer();
   return new Response(bytes, {

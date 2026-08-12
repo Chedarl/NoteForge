@@ -32,18 +32,28 @@ export default function SendClientList({
   const [open, setOpen] = useState(false);
 
   if (state.success) {
-    const { whatsapp, filename, total, active } = state.success;
+    const { whatsapp, filename, total, active, whatsappUrl } = state.success;
     return (
       <div className="nf-card mb-6 border-[color:var(--nf-accent)] px-5 py-4">
         <p className="font-semibold text-slate-900">
-          Client list sent — {active} active of {total}
+          Client list ready — {active} active of {total}
         </p>
         <p className="mt-1 text-sm text-slate-700">
-          {whatsapp === null
-            ? "WhatsApp delivery isn't set up on this deployment, so nothing was sent."
-            : whatsapp.message}
+          {whatsapp?.sent
+            ? whatsapp.message
+            : "Press the button to open WhatsApp with the link ready to send."}
         </p>
-        <p className="mt-2 font-mono text-xs break-all text-slate-500">{filename}</p>
+
+        {/* The link is what makes this work without a Meta Business account.
+            Opened rather than auto-redirected: the clinician has just been
+            reading their caseload and should not be thrown into another app. */}
+        {whatsappUrl && (
+          <a href={whatsappUrl} className="nf-btn nf-btn-primary mt-3 w-full sm:w-auto">
+            Open WhatsApp
+          </a>
+        )}
+
+        <p className="mt-3 font-mono text-xs break-all text-slate-500">{filename}</p>
       </div>
     );
   }

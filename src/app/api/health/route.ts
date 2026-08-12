@@ -57,6 +57,29 @@ export async function GET() {
   const supabaseAnonKey = Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   const supabaseSecretKey = Boolean(process.env.SUPABASE_SECRET_KEY);
 
+  /*
+   * Storage is checked separately from the keys, because having a secret key is
+   * not the same as having somewhere to put a file. Photograph upload needs
+   * `note-pages` and every share link needs `note-exports`; when a bucket is
+   * missing those features fail at the moment of use with an error that looks
+   * like a bug in the app rather than a gap in the setup.
+   */
+  let storagePages = false;
+  let storageExports = false;
+  if (supabaseUrl && supabaseSecretKey) {
+    try {
+      const { createAdminClient, BUCKET_PAGES, BUCKET_EXPORTS } = await import(
+        "@/lib/supabase/admin"
+      );
+      const { data } = await createAdminClient().storage.listBuckets();
+      const names = new Set((data ?? []).map((b) => b.name));
+      storagePages = names.has(BUCKET_PAGES);
+      storageExports = names.has(BUCKET_EXPORTS);
+    } catch {
+      // Both stay false; the keys are reported separately above.
+    }
+  }
+
   const checks = {
     database,
     /** False means `npx prisma migrate deploy` has not been run against it. */
@@ -68,12 +91,18 @@ export async function GET() {
     // deployment looks broken.
     supabaseSecretKey,
     clientNameEncryption: fieldCryptoConfigured(),
+    /** Photograph upload needs this bucket. */
+    storageForPhotos: storagePages,
+    /** Every WhatsApp share link needs this one. */
+    storageForShares: storageExports,
     whatsappDelivery: whatsappConfigured(),
     email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
   };
 
-  // Everything a person can sign in and file an update without.
-  const optional = new Set(["whatsappDelivery", "email"]);
+  // Everything a person can sign in and file a typed update without. Photograph
+  // upload and share links each need their bucket, so those are not optional if
+  // you intend to use them — but they do not stop the core path working.
+  const optional = new Set(["whatsappDelivery", "email", "storageForPhotos", "storageForShares"]);
   const missing = Object.entries(checks)
     .filter(([key, ok]) => !ok && !optional.has(key))
     .map(([key]) => key);

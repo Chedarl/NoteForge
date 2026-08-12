@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { submitQuickBatch, type QuickBatchState } from "@/lib/intake/quickActions";
+import SendRoundOnWhatsApp from "@/components/therapist/SendRoundOnWhatsApp";
 
 /**
  * The write-and-send screen.
@@ -81,7 +82,7 @@ export function QuickUpdate({
             </h2>
             <p className="mt-0.5 text-sm text-slate-700">
               {whatsapp === null
-                ? "The PDF is ready. WhatsApp delivery isn't set up here, so download it below."
+                ? "Your PDF is ready. Send it on WhatsApp below, or open it first."
                 : whatsapp.message}
             </p>
           </div>
@@ -138,7 +139,7 @@ export function QuickUpdate({
                 href={`/api/export/submission/${downloadIds[0]}`}
                 target="_blank"
                 rel="noopener"
-                className="nf-btn nf-btn-primary"
+                className="nf-btn nf-btn-quiet"
               >
                 {downloadIds.length > 1 ? "Open the first PDF" : "Open the PDF"}
               </a>
@@ -150,6 +151,19 @@ export function QuickUpdate({
               My clients
             </Link>
           </div>
+
+          {/*
+            Always offered, even when the Cloud API already sent it. If it did,
+            this is how you send it to somebody else as well; if it did not —
+            which is the case until Meta's business approval completes — this is
+            the only way to send it at all, and its absence was the bug.
+          */}
+          {downloadIds.length > 0 && (
+            <SendRoundOnWhatsApp
+              submissionIds={downloadIds}
+              defaultPhone={noteWriterNumber ?? ""}
+            />
+          )}
         </div>
       </div>
     );
@@ -248,8 +262,15 @@ export function QuickUpdate({
         note is written from this, so anything left out cannot be recovered later.
       </p>
 
-      {whatsappReady && (
-        <div className="rounded-[var(--nf-radius)] border border-[color:var(--nf-border)] bg-white px-4 py-3.5">
+      {/*
+        Not gated on `whatsappReady` any more. Hiding the whole block when the
+        Cloud API is unconfigured also hid the name choice, which has nothing to
+        do with how the document is delivered — and it left the screen with no
+        WhatsApp affordance at all, which is the bug being fixed.
+      */}
+      <div className="rounded-[var(--nf-radius)] border border-[color:var(--nf-border)] bg-white px-4 py-3.5">
+        {whatsappReady && (
+          <>
           {/* An ordinary editable field, not a setting two screens away. Cover
               arrangements and second note writers are normal; none of them
               should need an administrator. */}
@@ -280,8 +301,10 @@ export function QuickUpdate({
               <span className="text-slate-700">Remember this as the usual number</span>
             </label>
           )}
+          </>
+        )}
 
-          <label className="mt-3 flex cursor-pointer items-start gap-2.5 border-t border-[color:var(--nf-border)] pt-3 text-sm">
+          <label className={`flex cursor-pointer items-start gap-2.5 text-sm ${whatsappReady ? "mt-3 border-t border-[color:var(--nf-border)] pt-3" : ""}`}>
             <input
               type="checkbox"
               name="includeName"
@@ -295,8 +318,14 @@ export function QuickUpdate({
               </span>
             </span>
           </label>
-        </div>
-      )}
+
+        {!whatsappReady && (
+          <p className="nf-hint mt-2">
+            Automatic delivery is not configured, so nothing sends on its own. You will get
+            a <strong>Send on WhatsApp</strong> button once this is saved.
+          </p>
+        )}
+      </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <button disabled={pending} className="nf-btn nf-btn-primary w-full sm:w-auto">

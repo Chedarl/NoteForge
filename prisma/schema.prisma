@@ -413,8 +413,22 @@ model ShareLink {
   practiceId String
   practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
 
-  submissionId String
-  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  /// The submission this document is anchored to, when there is one.
+  ///
+  /// Nullable because not every shareable document is a submission. A client
+  /// list is a document about a caseload, not about an encounter, and forcing
+  /// it to borrow some unrelated submission's id to satisfy a foreign key would
+  /// put a lie in the audit trail — "this share was of submission X" when it
+  /// was not. A round of several submissions still anchors to its first, which
+  /// is a real relationship worth keeping.
+  submissionId String?
+  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  /// What kind of document the stored object is: `submission`, `round` or
+  /// `roster`. Deliberately a coarse label and never anything about a client —
+  /// it is shown on the unauthenticated landing page, so it must be safe to
+  /// read by anyone holding the link before they have downloaded anything.
+  documentKind String @default("submission")
 
   createdById String?
   createdBy   User?   @relation("ShareCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
