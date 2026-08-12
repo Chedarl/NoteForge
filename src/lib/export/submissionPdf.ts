@@ -8,7 +8,12 @@ import { TEMPLATES } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { safeSegment } from "@/lib/export/zip";
 import { summariseChanges, changeHeadline } from "@/lib/export/changes";
-import { renderSubmissionPdf, type PdfSection, type SubmissionPdfData } from "@/lib/export/pdf";
+import {
+  renderSubmissionPdf,
+  renderSubmissionsPdf,
+  type PdfSection,
+  type SubmissionPdfData,
+} from "@/lib/export/pdf";
 import type { SubmissionState, TemplateKind } from "@prisma/client";
 
 /**
@@ -91,9 +96,17 @@ export function submissionPdfFilename(parts: {
   ].join("_") + ".pdf";
 }
 
-export async function buildSubmissionPdf(
+/**
+ * Everything the renderer needs for one submission, and nothing rendered yet.
+ *
+ * Split out so a batch can assemble several and hand them to one document. The
+ * alternative — building each PDF separately and stitching the bytes — would
+ * mean every client's file carried its own page numbering, so "2 / 2" would
+ * appear four times in a document with eight pages.
+ */
+async function assembleSubmissionData(
   options: SubmissionPdfOptions
-): Promise<SubmissionPdfResult | null> {
+): Promise<SubmissionPdfData | null> {
   const { submissionId, practiceId, includeName, restrictToTherapistId } = options;
 
   // Scoped by practiceId in the same query rather than checked afterwards, so a
@@ -184,6 +197,15 @@ export async function buildSubmissionPdf(
     generatedAt: new Date().toISOString().slice(0, 16).replace("T", " ") + "Z",
   };
 
+  return data;
+}
+
+export async function buildSubmissionPdf(
+  options: SubmissionPdfOptions
+): Promise<SubmissionPdfResult | null> {
+  const data = await assembleSubmissionData(options);
+  if (!data) return null;
+
   const rendered = await renderSubmissionPdf(data);
   const pdf = await attachJson(rendered, machineReadable(data));
 
@@ -198,6 +220,73 @@ export async function buildSubmissionPdf(
     clientCode: data.clientCode,
     encounterDate: data.encounterDate,
     identifiable: data.clientName !== null,
+  };
+}
+
+export interface BatchPdfResult {
+  pdf: Buffer;
+  filename: string;
+  clientCodes: string[];
+  identifiable: boolean;
+}
+
+/**
+ * Several submissions as one document, a page per client.
+ *
+ * This is the round as a clinician actually files it — one sheet covering
+ * everyone they saw, which is what the paper process produces and what a note
+ * writer wants to receive. Splitting it into one message per client would make
+ * the recipient collate six attachments by hand, which is the collation problem
+ * this product exists to remove.
+ *
+ * Order is the order the clinician wrote them in, not the database's. They know
+ * why Mrs A came before Mr B, and reordering their round would be this tool
+ * being clever about something it does not understand.
+ */
+export async function buildBatchPdf(options: {
+  submissionIds: string[];
+  practiceId: string;
+  includeName: boolean;
+  restrictToTherapistId?: string;
+}): Promise<BatchPdfResult | null> {
+  const items: SubmissionPdfData[] = [];
+
+  for (const submissionId of options.submissionIds) {
+    const data = await assembleSubmissionData({
+      submissionId,
+      practiceId: options.practiceId,
+      includeName: options.includeName,
+      restrictToTherapistId: options.restrictToTherapistId,
+    });
+    // A missing one is skipped rather than failing the whole round: the others
+    // are real work that has already been saved.
+    if (data) items.push(data);
+  }
+
+  if (items.length === 0) return null;
+
+  const practiceName = items[0].practiceName;
+  const rendered = await renderSubmissionsPdf(items, practiceName);
+  const pdf = await attachJson(rendered, {
+    schema: "noteforge.batch/1",
+    generatedAt: items[0].generatedAt,
+    practice: practiceName,
+    count: items.length,
+    submissions: items.map(machineReadable),
+  });
+
+  const day = items[0].encounterDate;
+  const segment = (value: string) => safeSegment(value).replace(/[\s_]+/g, "-");
+
+  return {
+    pdf,
+    // Deliberately not the §5 per-submission name: this file is not one
+    // submission and naming it as though it were would mislead anything parsing
+    // the filename. The count is in it so a recipient can tell at a glance
+    // whether they have the whole round.
+    filename: `${segment(practiceName.slice(0, 24))}_${segment(day)}_round_${items.length}-clients.pdf`,
+    clientCodes: items.map((item) => item.clientCode),
+    identifiable: items.some((item) => item.clientName !== null),
   };
 }
 

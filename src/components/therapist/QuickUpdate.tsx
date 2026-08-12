@@ -2,25 +2,24 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import { submitQuickUpdate, type QuickUpdateState } from "@/lib/intake/quickActions";
+import { submitQuickBatch, type QuickBatchState } from "@/lib/intake/quickActions";
 
 /**
  * The write-and-send screen.
  *
- * Modelled on what the clinicians this replaces actually do: a page headed with
- * a name — "Smith J" — and a short paragraph underneath in their own shorthand.
- * So the client is a **name you type**, not a record you create first, and the
- * writing surface is the screen rather than one field among several.
+ * Modelled on the page a clinician actually produces: a round of clients seen
+ * in one sitting, each headed by a name — "Smith J" — with a short paragraph
+ * underneath in their own shorthand. So this screen takes as many clients as
+ * they saw, not one, and sends the whole round as a single document.
  *
- * Typing a name that already exists finds that client; a new one is created with
- * the next practice code. Nothing is weakened by that — the guardrail, the audit
- * trail and duplicate detection all run identically either way — and it removes
- * the one step the paper process does not have.
+ * One entry and six entries are the same code path. A separate "single" screen
+ * would be a second way to do the same thing, and the two would drift.
  *
- * The existing clients are offered through a native `<datalist>` rather than a
- * custom autocomplete. It is one element, it needs no JavaScript, and on a phone
- * it produces the platform's own picker, which is faster than anything that
- * could be built here and is already familiar.
+ * Entries are held in local state rather than being added on the server, so
+ * nothing is written until the round is sent — a half-typed round is not
+ * something a note writer should be able to receive. Existing clients are
+ * offered through a native `<datalist>`: one element, no JavaScript, and on a
+ * phone it produces the platform's own picker.
  */
 
 export interface QuickClient {
@@ -29,7 +28,13 @@ export interface QuickClient {
   code: string;
 }
 
-const initial: QuickUpdateState = {};
+interface Entry {
+  key: number;
+  name: string;
+  narrative: string;
+}
+
+const initial: QuickBatchState = {};
 
 /** `datetime-local` wants local wall-clock time, not an ISO instant. */
 function nowLocal(): string {
@@ -37,6 +42,8 @@ function nowLocal(): string {
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 16);
 }
+
+let nextKey = 1;
 
 export function QuickUpdate({
   clients,
@@ -47,12 +54,16 @@ export function QuickUpdate({
   noteWriterNumber: string | null;
   whatsappReady: boolean;
 }) {
-  const [state, formAction, pending] = useActionState(submitQuickUpdate, initial);
+  const [state, formAction, pending] = useActionState(submitQuickBatch, initial);
   const [occurredAt, setOccurredAt] = useState(nowLocal);
   const [showSendTo, setShowSendTo] = useState(false);
+  const [entries, setEntries] = useState<Entry[]>([{ key: 0, name: "", narrative: "" }]);
+
+  const update = (key: number, patch: Partial<Entry>) =>
+    setEntries((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
   if (state.success) {
-    const { whatsapp, filename, flagged, submissionId, client } = state.success;
+    const { filed, refused, filename, downloadIds, whatsapp } = state.success;
     return (
       <div className="nf-card mt-8 overflow-hidden">
         <div className="flex items-start gap-3 border-b border-[color:var(--nf-border)] bg-[color:var(--nf-accent-wash)] px-6 py-5">
@@ -64,48 +75,74 @@ export function QuickUpdate({
           </span>
           <div>
             <h2 className="text-base font-semibold text-slate-900">
-              Saved for {client.label}
+              {filed.length} update{filed.length === 1 ? "" : "s"} saved
             </h2>
             <p className="mt-0.5 text-sm text-slate-700">
               {whatsapp === null
-                ? "Your PDF is ready. WhatsApp delivery isn't set up here, so download it below."
+                ? "The PDF is ready. WhatsApp delivery isn't set up here, so download it below."
                 : whatsapp.message}
             </p>
           </div>
         </div>
 
         <div className="space-y-4 px-6 py-5">
-          <p className="text-sm text-slate-600">
-            Filed under{" "}
-            <span className="font-mono font-medium text-slate-900">{client.code}</span>
-            {client.created ? " — a new client record, created just now." : "."}
-          </p>
-
-          {flagged && (
-            <p className="rounded-[--nf-radius] bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
-              This looks similar to something already submitted for this client, so it has
-              been flagged for a person to check before anything is written twice.
-            </p>
+          {filed.length > 0 && (
+            <ul className="space-y-1.5">
+              {filed.map((entry) => (
+                <li key={entry.clientCode} className="flex flex-wrap items-baseline gap-2 text-sm">
+                  <span className="font-medium text-slate-900">{entry.name}</span>
+                  <span className="font-mono text-xs text-slate-500">{entry.clientCode}</span>
+                  {entry.created && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                      new client
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
 
-          <div>
-            <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-              Document
-            </p>
-            <p className="mt-1 font-mono text-xs break-all text-slate-700">{filename}</p>
-          </div>
+          {refused.length > 0 && (
+            <div className="rounded-[--nf-radius] border border-amber-300 bg-amber-50 px-4 py-3.5">
+              <p className="text-sm font-semibold text-amber-900">
+                {refused.length} not filed
+              </p>
+              <ul className="mt-1.5 space-y-1.5 text-sm text-amber-900">
+                {refused.map((entry, i) => (
+                  <li key={i}>
+                    <span className="font-medium">{entry.name}</span> — {entry.problem}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-amber-800">
+                Anything refused on a client&rsquo;s status has still been kept and flagged for
+                the practice to reconcile. It has not been thrown away.
+              </p>
+            </div>
+          )}
+
+          {filename && (
+            <div>
+              <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+                Document
+              </p>
+              <p className="mt-1 font-mono text-xs break-all text-slate-700">{filename}</p>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2.5 pt-1">
-            <a
-              href={`/api/export/submission/${submissionId}`}
-              target="_blank"
-              rel="noopener"
-              className="nf-btn nf-btn-primary"
-            >
-              Open the PDF
-            </a>
+            {downloadIds.length > 0 && (
+              <a
+                href={`/api/export/submission/${downloadIds[0]}`}
+                target="_blank"
+                rel="noopener"
+                className="nf-btn nf-btn-primary"
+              >
+                {downloadIds.length > 1 ? "Open the first PDF" : "Open the PDF"}
+              </a>
+            )}
             <a href="/t/write" className="nf-btn nf-btn-quiet">
-              Write the next one
+              Start another round
             </a>
             <Link href="/t" className="nf-btn nf-btn-quiet">
               My clients
@@ -124,83 +161,90 @@ export function QuickUpdate({
         </p>
       )}
 
-      {state.blocked && (
-        <div className="rounded-[--nf-radius] border border-amber-300 bg-amber-50 px-4 py-3.5 text-sm text-amber-900">
-          <p className="font-semibold">{state.blocked.message}</p>
-          <p className="mt-1">
-            What you wrote has been kept and flagged for someone to reconcile — it has not
-            been thrown away. Nothing more is needed from you right now.
-          </p>
-        </div>
-      )}
+      <div className="nf-card px-5 py-4">
+        <label htmlFor="occurredAt" className="nf-label">
+          When you saw them
+        </label>
+        <input
+          id="occurredAt"
+          name="occurredAt"
+          type="datetime-local"
+          required
+          value={occurredAt}
+          onChange={(e) => setOccurredAt(e.target.value)}
+          className="nf-field sm:max-w-xs"
+        />
+        <p className="nf-hint">Applies to every client in this round. Defaults to now.</p>
+      </div>
 
-      {/* The writing surface. One card, so the eye goes to the box and not to a
-          form. The header row carries the two things that must be right and
-          nothing else. */}
-      <div className="nf-surface overflow-hidden">
-        <div className="grid gap-4 border-b border-[color:var(--nf-border)] px-5 py-4 sm:grid-cols-[1.4fr_1fr]">
-          <div>
-            <label htmlFor="clientName" className="nf-label">
-              Client
-            </label>
+      <datalist id="nf-clients">
+        {clients.map((client) => (
+          <option key={client.id} value={client.label}>
+            {client.code}
+          </option>
+        ))}
+      </datalist>
+
+      {entries.map((entry, index) => (
+        <div key={entry.key} className="nf-surface overflow-hidden">
+          <div className="flex items-center gap-3 border-b border-[color:var(--nf-border)] px-5 py-3">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+              {index + 1}
+            </span>
             <input
-              id="clientName"
               name="clientName"
               list="nf-clients"
               required
               autoComplete="off"
               placeholder="Smith J"
-              className="nf-field font-medium"
+              aria-label={`Client ${index + 1}`}
+              value={entry.name}
+              onChange={(e) => update(entry.key, { name: e.target.value })}
+              className="nf-field flex-1 font-medium"
             />
-            <datalist id="nf-clients">
-              {clients.map((client) => (
-                <option key={client.id} value={client.label}>
-                  {client.code}
-                </option>
-              ))}
-            </datalist>
-            <p className="nf-hint">
-              Write the name as you always do. New ones are created automatically.
-            </p>
+            {entries.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setEntries((rows) => rows.filter((r) => r.key !== entry.key))}
+                className="shrink-0 rounded-full px-2 py-1 text-sm text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label={`Remove client ${index + 1}`}
+              >
+                Remove
+              </button>
+            )}
           </div>
 
-          <div>
-            <label htmlFor="occurredAt" className="nf-label">
-              When
-            </label>
-            <input
-              id="occurredAt"
-              name="occurredAt"
-              type="datetime-local"
+          <div className="px-5 py-4">
+            <textarea
+              name="narrative"
+              rows={8}
               required
-              value={occurredAt}
-              onChange={(e) => setOccurredAt(e.target.value)}
-              className="nf-field"
+              aria-label={`Update for client ${index + 1}`}
+              placeholder={
+                "Pt reports sleeping better since the medication change, mood fair.\nDenies SI/HI/AVH. Endorses 7–8 cig daily, denies SUD or alcohol.\nRequested refill. Denies ER visit."
+              }
+              value={entry.narrative}
+              onChange={(e) => update(entry.key, { narrative: e.target.value })}
+              className="nf-writing"
             />
-            <p className="nf-hint">Defaults to now.</p>
           </div>
         </div>
+      ))}
 
-        <div className="px-5 py-4">
-          <label htmlFor="narrative" className="nf-label">
-            The update
-          </label>
-          <textarea
-            id="narrative"
-            name="narrative"
-            rows={14}
-            required
-            placeholder={
-              "Pt reports sleeping better since the medication change, mood fair.\nDenies SI/HI/AVH. Endorses 7–8 cig daily, denies SUD or alcohol.\nRequested refill. Denies ER visit."
-            }
-            className="nf-writing"
-          />
-          <p className="nf-hint">
-            Your own shorthand is fine. Include risk and any medication change explicitly —
-            the note is written from this, so anything left out cannot be recovered later.
-          </p>
-        </div>
-      </div>
+      <button
+        type="button"
+        onClick={() =>
+          setEntries((rows) => [...rows, { key: nextKey++, name: "", narrative: "" }])
+        }
+        className="nf-btn nf-btn-quiet w-full border-dashed sm:w-auto"
+      >
+        + Add another client
+      </button>
+
+      <p className="nf-hint">
+        Your own shorthand is fine. Include risk and any medication change explicitly — the
+        note is written from this, so anything left out cannot be recovered later.
+      </p>
 
       {whatsappReady && (
         <div className="rounded-[--nf-radius] border border-[color:var(--nf-border)] bg-white px-4 py-3.5">
@@ -226,7 +270,7 @@ export function QuickUpdate({
           {showSendTo && (
             <div className="mt-3">
               <label htmlFor="sendTo" className="nf-label">
-                WhatsApp number for this update
+                WhatsApp number for this round
               </label>
               <input
                 id="sendTo"
@@ -248,7 +292,7 @@ export function QuickUpdate({
               className="mt-0.5 size-4 accent-[color:var(--nf-accent)]"
             />
             <span className="text-slate-700">
-              Include the client&rsquo;s name in the PDF
+              Include client names in the PDF
               <span className="nf-hint mt-0.5 block">
                 Off by default — the document is identified by client code. WhatsApp is not
                 a protected channel, so a named document stays in that chat and its backups.
@@ -263,11 +307,13 @@ export function QuickUpdate({
           {pending
             ? "Saving…"
             : whatsappReady
-              ? "Save and send the PDF"
+              ? `Save and send ${entries.length > 1 ? `${entries.length} updates` : "the PDF"}`
               : "Save and make the PDF"}
         </button>
         <span className="text-xs text-slate-500">
-          Saved with the date and time, then turned into a PDF.
+          {entries.length > 1
+            ? "All of them go as one PDF, a page per client."
+            : "Saved with the date and time, then turned into a PDF."}
         </span>
       </div>
     </form>

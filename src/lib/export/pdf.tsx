@@ -275,17 +275,21 @@ function Section({ label, value }: PdfSection) {
   );
 }
 
-function SubmissionDocument({ data }: { data: SubmissionPdfData }) {
+/**
+ * One submission as one `Page`.
+ *
+ * Split out from the Document so a batch can put several clients in a single
+ * file. Because the running header and footer are `fixed` *inside* the Page,
+ * each client's pages carry their own identity, status and submission id —
+ * which is what makes a combined document safe to send. A batch built by
+ * concatenating text under one header would put the wrong client's code above
+ * somebody's session, and that is the one mistake this product exists to make
+ * impossible.
+ */
+function SubmissionPageBody({ data }: { data: SubmissionPdfData }) {
   const nonActive = data.clientStatus.toLowerCase() !== "active";
 
   return (
-    <Document
-      title={`${data.clientCode} ${data.encounterDate} ${data.encounterType}`}
-      author={data.practiceName}
-      subject={`NoteForge submission ${data.submissionId}`}
-      creator="NoteForge"
-      producer="NoteForge"
-    >
       <Page size="A4" style={styles.page}>
         {/* §5: client identifier and status prominent, on every page. */}
         <View style={styles.runningHeader} fixed>
@@ -447,11 +451,63 @@ function SubmissionDocument({ data }: { data: SubmissionPdfData }) {
           </Text>
         </View>
       </Page>
+  );
+}
+
+function SubmissionDocument({ data }: { data: SubmissionPdfData }) {
+  return (
+    <Document
+      title={`${data.clientCode} ${data.encounterDate} ${data.encounterType}`}
+      author={data.practiceName}
+      subject={`NoteForge submission ${data.submissionId}`}
+      creator="NoteForge"
+      producer="NoteForge"
+    >
+      <SubmissionPageBody data={data} />
     </Document>
   );
 }
 
-/** Renders the document to a PDF buffer. */
+/**
+ * Several submissions in one file, one client per page.
+ *
+ * This is what a clinician who writes a page of updates in one sitting actually
+ * hands over: a single document covering the round, not six separate messages
+ * for a note writer to collate. Each client keeps their own page, header,
+ * footer and submission id, so the file can be split back apart and every sheet
+ * is still individually attributable.
+ */
+function SubmissionBatchDocument({
+  items,
+  practiceName,
+}: {
+  items: SubmissionPdfData[];
+  practiceName: string;
+}) {
+  return (
+    <Document
+      title={`${practiceName} — ${items.length} client update${items.length === 1 ? "" : "s"}`}
+      author={practiceName}
+      subject={`NoteForge batch of ${items.length}`}
+      creator="NoteForge"
+      producer="NoteForge"
+    >
+      {items.map((data) => (
+        <SubmissionPageBody key={data.submissionId} data={data} />
+      ))}
+    </Document>
+  );
+}
+
+/** Renders one submission to a PDF buffer. */
 export async function renderSubmissionPdf(data: SubmissionPdfData): Promise<Buffer> {
   return renderToBuffer(<SubmissionDocument data={data} />);
+}
+
+/** Renders several submissions into one PDF, a page per client. */
+export async function renderSubmissionsPdf(
+  items: SubmissionPdfData[],
+  practiceName: string
+): Promise<Buffer> {
+  return renderToBuffer(<SubmissionBatchDocument items={items} practiceName={practiceName} />);
 }

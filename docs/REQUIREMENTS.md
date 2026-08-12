@@ -182,6 +182,8 @@ immediately.
 | One simple box: write what was discussed | **DONE** — `/t/write`, over the `NARRATIVE` template |
 | Enter a client by **name**, not by picking a record | **DONE** — `src/lib/clients/resolve.ts`. A typed "Smith J" finds that client or creates one with the next practice code. There is no "add the client first" step, because the paper process being replaced does not have one |
 | Send to a chosen WhatsApp number | **DONE** — defaults to `Practice.noteWriterWhatsApp`; a number typed on the form overrides it **for that send only** and is not saved over the practice's |
+| **Several clients in one round** | **DONE** — `/t/write` takes as many clients as were seen and sends them as **one PDF, a page per client**, which is the shape the paper process produces. Each entry is still its own submission, so the guardrail refuses per client and one refusal does not discard the round |
+| Sign up, sign in, sign out | **DONE** — `/signup` creates the account **already confirmed** and signs the person straight in, so registration does not depend on Supabase's rate-limited built-in SMTP. See the note below |
 | Carries the date **and time** of the encounter | **DONE** — `datetime-local`, defaulting to now |
 | Becomes a PDF immediately | **DONE** — built in the same request, not queued |
 | Sent over WhatsApp immediately | **DONE** — `src/lib/whatsapp/send.ts` sends the document to `Practice.noteWriterWhatsApp` via the Meta Cloud API. **Not exercised against the live API** — `graph.facebook.com` is refused by the build environment's egress policy |
@@ -192,6 +194,24 @@ guardrail, duplicate detection, completeness gate and audit trail all still run 
 "quick" path that skipped them would be a hole straight through the rule this product
 exists to enforce. Verified: a quick update against the seeded deceased client is refused,
 and the clinician's text is kept and flagged.
+
+### Registration without email confirmation
+
+Signup uses the admin API with `email_confirm: true` rather than `auth.signUp`.
+Supabase's built-in SMTP is rate-limited to a handful of messages an hour and is
+explicitly not for production, so on a fresh project a real fraction of people
+who sign up never receive the mail and can never sign in.
+
+The trade is that **an address is not proven to belong to the person who typed
+it**. What that does and does not buy an attacker here: a signup creates a new,
+empty practice and never joins an existing one, so registering someone else's
+address yields an empty workspace and no access to anybody's data. The cost is
+that password reset, which does need a working mailbox, may go to someone who
+cannot read it.
+
+To reverse it: configure real SMTP in Supabase and switch back to `auth.signUp`.
+The confirmation routes at `/auth/callback` and `/auth/confirm` are already built
+and keep working either way.
 
 ### The delivery decision, recorded
 
