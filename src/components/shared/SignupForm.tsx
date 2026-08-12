@@ -85,7 +85,7 @@ export default function SignupForm() {
           className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm shadow-sm outline-none focus:border-[#087f8c] focus:ring-2 focus:ring-teal-100"
         />
         <span className="mt-1 block text-xs font-normal text-slate-500">
-          At least 10 characters. Your email may need confirmation before sign-in.
+          At least 10 characters. You are signed in straight away — no confirmation email.
         </span>
       </label>
 
