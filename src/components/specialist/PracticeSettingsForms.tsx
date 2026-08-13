@@ -9,7 +9,7 @@ import {
   type SettingsState,
 } from "@/lib/admin/actions";
 import { DISCIPLINE_LABEL, DISCIPLINE_OPTIONS } from "@/lib/intake/disciplines";
-import type { Discipline, UserRole, UserStatus } from "@prisma/client";
+import type { UserRole, UserStatus } from "@prisma/client";
 
 export function WhatsAppSettingsForm({ defaultPhone }: { defaultPhone: string }) {
   const [state, action, pending] = useActionState<SettingsState, FormData>(
@@ -20,7 +20,7 @@ export function WhatsAppSettingsForm({ defaultPhone }: { defaultPhone: string })
   return (
     <form action={action} className="space-y-3">
       <label className="block text-sm font-medium">
-        Note writer&apos;s WhatsApp number
+        Note writer's WhatsApp number
         <input
           name="noteWriterWhatsApp"
           type="tel"
@@ -142,8 +142,4 @@ export function UserStatusForm({
       </button>
     </form>
   );
-}
-
-export function disciplineName(discipline: Discipline | null): string {
-  return discipline ? DISCIPLINE_LABEL[discipline] : "—";
 }
