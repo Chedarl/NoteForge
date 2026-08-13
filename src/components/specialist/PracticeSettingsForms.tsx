@@ -20,7 +20,7 @@ export function WhatsAppSettingsForm({ defaultPhone }: { defaultPhone: string })
   return (
     <form action={action} className="space-y-3">
       <label className="block text-sm font-medium">
-        Note writer's WhatsApp number
+        Note writer&apos;s WhatsApp number
         <input
           name="noteWriterWhatsApp"
           type="tel"
