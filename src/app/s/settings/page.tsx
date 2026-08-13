@@ -57,7 +57,7 @@ export default async function SettingsPage() {
 
       {migrationsPending && (
         <div className="rounded-[var(--nf-radius)] border border-amber-300 bg-amber-50 px-4 py-3.5 text-sm text-amber-900">
-          <p className="font-semibold">This deployment's database is behind the code.</p>
+          <p className="font-semibold">This deployment&rsquo;s database is behind the code.</p>
           <p className="mt-1">
             The tables exist but the most recent migration has not been applied, so the
             WhatsApp handoff setting cannot be read or saved. Run{" "}
