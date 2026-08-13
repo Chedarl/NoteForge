@@ -5,8 +5,13 @@ import {
   InviteUserForm,
   UserStatusForm,
   WhatsAppSettingsForm,
-  disciplineName,
 } from "@/components/specialist/PracticeSettingsForms";
+// DISCIPLINE_LABEL lives in a module with no "use client" precisely so both
+// sides can share it. PracticeSettingsForms is a client component, and a plain
+// function imported from one into a server component is a client reference
+// proxy, not the function — calling it throws at request time, which is what
+// took this page down.
+import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +57,7 @@ export default async function SettingsPage() {
 
       {migrationsPending && (
         <div className="rounded-[var(--nf-radius)] border border-amber-300 bg-amber-50 px-4 py-3.5 text-sm text-amber-900">
-          <p className="font-semibold">This deployment&rsquo;s database is behind the code.</p>
+          <p className="font-semibold">This deployment's database is behind the code.</p>
           <p className="mt-1">
             The tables exist but the most recent migration has not been applied, so the
             WhatsApp handoff setting cannot be read or saved. Run{" "}
@@ -101,7 +106,7 @@ export default async function SettingsPage() {
                   {user.role.toLowerCase()}
                 </Pill>
                 <span className="min-w-36 text-xs text-slate-500">
-                  {disciplineName(user.discipline)}
+                  {user.discipline ? DISCIPLINE_LABEL[user.discipline] : "—"}
                 </span>
                 <Pill tone={user.status === "ACTIVE" ? "emerald" : "rose"}>
                   {user.status.toLowerCase()}
