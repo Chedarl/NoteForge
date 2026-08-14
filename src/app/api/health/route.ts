@@ -64,19 +64,60 @@ export async function GET() {
    * exactly the wrong conclusion.
    */
   let missingMigrations: string[] | null = null;
+
+  /*
+   * An absent ledger is not the same as an unmigrated database, and conflating
+   * the two produced the worst wrong answer this endpoint has given.
+   *
+   * The original deployment applied the migration SQL directly — that is how
+   * this project was first stood up, because the pooler was unreachable and
+   * only Supabase's HTTPS query API was available. Running the SQL that way
+   * builds the whole schema and writes nothing to `_prisma_migrations`, because
+   * that ledger is Prisma's own bookkeeping rather than part of the migration.
+   *
+   * So the database ends up complete and unrecorded. Reading "no ledger" as
+   * "nothing applied" then reports every migration missing on a database that
+   * is fully populated with live data — which is how this endpoint came to say
+   * a practice's clients were gone when they were sitting in the tables next
+   * door. It is also precisely the state Prisma refuses to migrate, with P3005
+   * "the database schema is not empty", so the build says so too.
+   *
+   * `UNMANAGED` is that state, and it needs baselining rather than migrating.
+   */
+  type SchemaState = "UP_TO_DATE" | "BEHIND" | "UNMANAGED" | "EMPTY" | "UNKNOWN";
+  let schemaState: SchemaState = "UNKNOWN";
+
   if (database) {
     try {
-      const rows = await prisma.$queryRaw<{ migration_name: string }[]>`
-        SELECT migration_name FROM "_prisma_migrations"
-        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+      const [{ ledger, schema }] = await prisma.$queryRaw<
+        { ledger: boolean; schema: boolean }[]
+      >`
+        SELECT to_regclass('public."_prisma_migrations"') IS NOT NULL AS ledger,
+               to_regclass('public."Client"')             IS NOT NULL AS schema
       `;
-      const applied = new Set(rows.map((row) => row.migration_name));
-      missingMigrations = EXPECTED_MIGRATIONS.filter((name) => !applied.has(name));
-      schemaUpToDate = missingMigrations.length === 0;
+
+      if (ledger) {
+        const rows = await prisma.$queryRaw<{ migration_name: string }[]>`
+          SELECT migration_name FROM "_prisma_migrations"
+          WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+        `;
+        const applied = new Set(rows.map((row) => row.migration_name));
+        missingMigrations = EXPECTED_MIGRATIONS.filter((name) => !applied.has(name));
+        schemaUpToDate = missingMigrations.length === 0;
+        schemaState = schemaUpToDate ? "UP_TO_DATE" : "BEHIND";
+      } else if (schema) {
+        // Tables but no ledger. Nothing is missing in the sense of "lost"; the
+        // migrations simply were not recorded, and until they are, none can be
+        // applied. Left null rather than listed, because listing them here is
+        // what caused the misreading.
+        schemaState = "UNMANAGED";
+      } else {
+        missingMigrations = [...EXPECTED_MIGRATIONS];
+        schemaState = "EMPTY";
+      }
     } catch {
-      // No `_prisma_migrations` table at all means nothing has ever been
-      // applied, which is the most behind a database can be.
-      missingMigrations = [...EXPECTED_MIGRATIONS];
+      // Left UNKNOWN with missingMigrations null: an error here says nothing
+      // about what is in the database.
     }
   }
 
@@ -146,6 +187,13 @@ export async function GET() {
        * the database could not be reached to ask.
        */
       missingMigrations,
+      /*
+       * UP_TO_DATE / BEHIND / UNMANAGED / EMPTY / UNKNOWN. Read this before
+       * `missingMigrations`: UNMANAGED means the schema is present but
+       * unrecorded, which needs baselining, not migrating, and emphatically
+       * does not mean the data is gone.
+       */
+      schemaState,
       note: "true means the value is present, never what it is.",
     },
     { headers: { "Cache-Control": "no-store" } }

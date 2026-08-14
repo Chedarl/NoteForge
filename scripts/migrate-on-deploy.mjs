@@ -187,12 +187,17 @@ function describe(url) {
 }
 
 let applied = false;
+let unmanagedSchema = false;
 
 for (const [index, url] of candidates.entries()) {
   console.log(`[migrate] Trying ${describe(url)}…`);
 
   const result = spawnSync("npx", ["prisma", "migrate", "deploy"], {
-    stdio: "inherit",
+    // stderr is captured rather than inherited so P3005 can be recognised, and
+    // then written straight back out — the whole point of this log is that a
+    // person can read what Prisma actually said.
+    stdio: ["inherit", "inherit", "pipe"],
+    encoding: "utf8",
     /*
      * Both, and that is not redundant.
      *
@@ -211,6 +216,13 @@ for (const [index, url] of candidates.entries()) {
     env: { ...process.env, DATABASE_URL: url, DIRECT_URL: url },
     shell: false,
   });
+
+  const stderr = result.stderr ?? "";
+  if (stderr) process.stderr.write(stderr);
+  // P3005 is a refusal, not a failure: the schema exists but Prisma has no
+  // record of creating it, so it will not touch the database. Trying the next
+  // candidate cannot help — every candidate reaches the same database.
+  if (stderr.includes("P3005")) unmanagedSchema = true;
 
   if (result.status === 0) {
     if (index > 0) {
@@ -238,6 +250,21 @@ console.error(
     "[migrate] MIGRATIONS DID NOT APPLY. The build continues, but the database is",
     "[migrate] behind the code and some screens will say so instead of working.",
     "[migrate]",
+    ...(unmanagedSchema
+      ? [
+          "[migrate] Prisma refused with P3005: the schema exists but there is no",
+          "[migrate] record of it in _prisma_migrations, so it will not migrate a",
+          "[migrate] database it did not build. This is the state a database is in",
+          "[migrate] when the migration SQL was run directly rather than through",
+          "[migrate] `prisma migrate deploy` — the tables are all there and the data",
+          "[migrate] is intact; only the ledger is missing.",
+          "[migrate]",
+          "[migrate] The fix is to baseline, not to migrate: record the migrations",
+          "[migrate] already present in _prisma_migrations, after which the pending",
+          "[migrate] ones apply normally. /api/health reports schemaState UNMANAGED",
+          "[migrate] for exactly this. See https://pris.ly/d/migrate-baseline",
+        ]
+      : []),
     "[migrate] Every candidate connection was tried and all of them failed, so",
     "[migrate] this is not the usual wrong-host mistake. Check the database is",
     "[migrate] running and not paused, and that DATABASE_URL points at the",
