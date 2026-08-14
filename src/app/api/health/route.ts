@@ -53,7 +53,17 @@ export async function GET() {
    * for every future migration without anybody remembering to update it.
    */
   let schemaUpToDate = false;
-  let missingMigrations: string[] = [];
+  /*
+   * `null` means "could not be determined", and it is deliberately not `[]`.
+   *
+   * When the database is unreachable there is nothing to ask, and an empty
+   * array reads as "nothing is missing" — the same false green this check was
+   * written to remove, reintroduced one level up. It was caught the first time
+   * this endpoint met a deployment with no database connection at all: it
+   * reported `database: false` alongside `missingMigrations: []`, which invites
+   * exactly the wrong conclusion.
+   */
+  let missingMigrations: string[] | null = null;
   if (database) {
     try {
       const rows = await prisma.$queryRaw<{ migration_name: string }[]>`
@@ -132,7 +142,8 @@ export async function GET() {
       /*
        * Named, not just counted. A migration name is not a secret — it is a
        * folder name in the repository — and it is the difference between "the
-       * database is behind" and knowing which change never landed.
+       * database is behind" and knowing which change never landed. `null` when
+       * the database could not be reached to ask.
        */
       missingMigrations,
       note: "true means the value is present, never what it is.",
