@@ -5,7 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { submitEncounter } from "@/lib/intake/submit";
-import { assessCompleteness, TEMPLATES } from "@/lib/intake/templates";
+import { assessCompleteness, TEMPLATES, readField } from "@/lib/intake/templates";
 import { writeAudit } from "@/lib/audit";
 import { changeClientStatus, StatusChangeError } from "@/lib/clients/status";
 import { templatesFor } from "@/lib/intake/disciplines";
@@ -76,9 +76,9 @@ export async function submitStructuredNote(
     return { error: "The session date is in the future." };
   }
 
-  const fields: Record<string, string> = {};
+  const fields: Record<string, unknown> = {};
   for (const field of TEMPLATES[templateKind].fields) {
-    fields[field.id] = String(formData.get(field.id) ?? "").trim();
+    fields[field.id] = readField(field, formData);
   }
 
   const completeness = assessCompleteness(templateKind, fields);

@@ -4,7 +4,7 @@ import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
 import { identityOf } from "@/lib/clients/identity";
 import { STATUS_LABEL } from "@/lib/clients/labels";
-import { TEMPLATES } from "@/lib/intake/templates";
+import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { safeSegment } from "@/lib/export/zip";
 import { summariseChanges, changeHeadline } from "@/lib/export/changes";
@@ -140,12 +140,12 @@ async function assembleSubmissionData(
   const template = TEMPLATES[submission.templateKind as TemplateKind];
   const raw = (submission.fields ?? {}) as Record<string, unknown>;
 
+  // `renderFieldValue` rather than a string check: a picker's answer is an
+  // array and a severity field's is an object, and both used to print as
+  // "Not recorded." on a page the note writer works from.
   const sections: PdfSection[] = template.fields.map((field) => {
-    const value = raw[field.id];
-    return {
-      label: field.label,
-      value: typeof value === "string" && value.trim() ? value.trim() : null,
-    };
+    const rendered = renderFieldValue(raw[field.id], field);
+    return { label: field.label, value: rendered || null };
   });
 
   const transcript =

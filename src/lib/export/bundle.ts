@@ -2,7 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { identityOf } from "@/lib/clients/identity";
-import { TEMPLATES } from "@/lib/intake/templates";
+import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import { createZip, safeSegment } from "@/lib/export/zip";
@@ -159,11 +159,19 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
         const discipline = submission.discipline ?? submission.submittedBy.discipline ?? null;
         const template = TEMPLATES[submission.templateKind as TemplateKind];
 
+        /*
+         * Rendered through the shared helper, not read as strings.
+         *
+         * This exact loop is where an earlier bug lived: every section in the
+         * exported ZIP read "_not recorded_" while the build and the type-check
+         * were both green. A picker's array would have vanished the same way,
+         * silently, and only unzipping the result would have shown it.
+         */
         const fields: Record<string, string> = {};
         const raw = (submission.fields ?? {}) as Record<string, unknown>;
         for (const field of template.fields) {
-          const value = raw[field.id];
-          if (typeof value === "string" && value.trim()) fields[field.id] = value.trim();
+          const rendered = renderFieldValue(raw[field.id], field);
+          if (rendered) fields[field.id] = rendered;
         }
 
         const transcript =

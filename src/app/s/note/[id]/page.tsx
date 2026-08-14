@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { ensureNote } from "@/lib/workspace/actions";
-import { TEMPLATES } from "@/lib/intake/templates";
+import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
+import { practiceNeeds } from "@/lib/intake/practiceNeeds";
 import { StatusBadge, Pill } from "@/components/shared/ui";
 import NoteEditor from "@/components/specialist/NoteEditor";
 import FlagResolver from "@/components/specialist/FlagResolver";
@@ -26,6 +27,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function NotePage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const needs = await practiceNeeds(user.practiceId);
   const { id } = await params;
 
   const note = await ensureNote(id);
@@ -153,7 +155,13 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
                   <div key={field.id}>
                     <dt className="text-xs font-medium text-slate-500">{field.label}</dt>
                     <dd className="prose-note text-sm">
-                      {String((submission.fields as Record<string, string>)[field.id] ?? "—")}
+                      {/* Through the shared renderer: `String(["a","b"])` gave
+                          "a,b" with no spacing and an object gave
+                          "[object Object]". */}
+                      {renderFieldValue(
+                        (submission.fields as Record<string, unknown>)[field.id],
+                        field
+                      ) || "—"}
                     </dd>
                   </div>
                 ))}
@@ -216,7 +224,8 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
           submissionId={submission.id}
           noteId={submission.note.id}
           templateKind={submission.note.templateKind as TemplateKind}
-          initialBody={submission.note.body as Record<string, string>}
+          needs={needs}
+        initialBody={submission.note.body as Record<string, string>}
           state={submission.note.state}
           aiAssisted={submission.note.aiAssisted}
           tags={submission.note.tags.map((t) => ({ id: t.id, kind: t.kind, label: t.label }))}

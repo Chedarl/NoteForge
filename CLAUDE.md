@@ -112,6 +112,44 @@ two agents with null `authUserId` coexist. And the guardrail refuses a
 discharged client through this door exactly as it does through `/t/write` —
 `["QUEUED", "BLOCKED"]` with a flag raised.
 
+## Template fields have types now, and one value renderer
+
+`TemplateField` gained `type: "prose" | "choice" | "multi" | "severity"`
+(absent means `prose`, so every template written before this is unchanged). A
+`multi` stores `string[]`, a `severity` stores `{ level, note }`.
+
+**`renderFieldValue` is the only place a stored answer becomes text**, and that
+is not tidiness. Before it existed, five places each did their own `typeof
+value === "string"` check, and an array would have vanished from each one
+independently and silently:
+
+- `flattenFields` feeds `rawText`, `contentHash` and `normalizedText`, so a
+  dropped value meant **every picker-only submission hashed identically and the
+  duplicate detector flagged them all against each other**.
+- `bundle.ts` would have omitted the field from `sessions.json` and printed
+  `_not recorded_` — the exact bug this file already warns about.
+- `saveNote` coerced with `String(...)`, destroying the array on the first save.
+- `assessCompleteness` gated on string length, so a required picker could never
+  be complete and the note could never be signed.
+- `formData.get` returns only the first value, so a checkbox group collapsed to
+  one tick. `readField` uses `getAll`.
+
+Ids are stored, labels are rendered. `renderFieldValue(value, field)` resolves
+option ids through the field's `options`, or through the needs vocabulary for
+`optionSource: "needs"` — so a reworded label does not orphan historical data,
+and a note writer never reads `local_food_bank` on a PDF.
+
+**Need ids in `src/lib/intake/needs.ts` are permanent.** Rename one and every
+historical submission silently stops matching. Retire with `retired: true`;
+never delete, never reuse. The standard list is a client-safe constant, not
+database rows, precisely so two practices' data stay comparable — only local
+additions live in `PracticeNeed`.
+
+Three screens render the same template — intake, the note editor, and the
+read-only view on the note page — and they now share
+`src/components/shared/TemplateField.tsx`. They used to have three copies of one
+loop, which was survivable when every field was a textarea and would not be now.
+
 ## Conventions
 
 - **Server-only vs client-safe.** Anything touching the database, a key or a secret gets

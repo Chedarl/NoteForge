@@ -1,5 +1,9 @@
 "use client";
 
+import TemplateFieldInput from "@/components/shared/TemplateField";
+import { fieldType } from "@/lib/intake/templates";
+import type { NeedDefinition } from "@/lib/intake/needs";
+
 import { useActionState, useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { saveNote, proposeDraft, addNoteTag, type NoteState } from "@/lib/workspace/actions";
@@ -43,6 +47,7 @@ export default function NoteEditor({
   noteId,
   templateKind,
   initialBody,
+  needs,
   state: noteState,
   aiAssisted,
   tags,
@@ -50,15 +55,22 @@ export default function NoteEditor({
   submissionId: string;
   noteId: string;
   templateKind: TemplateKind;
-  initialBody: Record<string, string>;
+  initialBody: Record<string, unknown>;
+  /** Resolved needs list for any picker fields in this template. */
+  needs: NeedDefinition[];
   state: NoteStateEnum;
   aiAssisted: boolean;
   tags: { id: string; kind: TagKind; label: string }[];
 }) {
   const template = TEMPLATES[templateKind];
-  const [body, setBody] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
-    for (const field of template.fields) initial[field.id] = initialBody[field.id] ?? "";
+  const [body, setBody] = useState<Record<string, unknown>>(() => {
+    const initial: Record<string, unknown> = {};
+    // Prose defaults to "" so the textarea is controlled from the first render;
+    // everything else keeps whatever shape it arrived in.
+    for (const field of template.fields) {
+      initial[field.id] =
+        initialBody[field.id] ?? (fieldType(field) === "prose" ? "" : undefined);
+    }
     return initial;
   });
 
@@ -120,22 +132,38 @@ export default function NoteEditor({
         <form action={saveAction} className="mt-4 space-y-4">
           <input type="hidden" name="submissionId" value={submissionId} />
 
-          {template.fields.map((field) => (
-            <div key={field.id}>
-              <label htmlFor={`note_${field.id}`} className="block text-sm font-medium">
-                {field.label}
-                {field.required ? <span className="text-rose-600"> *</span> : null}
-              </label>
-              <textarea
-                id={`note_${field.id}`}
-                name={field.id}
-                rows={field.rows}
-                value={body[field.id] ?? ""}
-                onChange={(e) => setBody((prev) => ({ ...prev, [field.id]: e.target.value }))}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-relaxed"
+          {/*
+            Prose stays controlled, because the drafter writes into it and the
+            textarea has to show what arrived. Pickers are uncontrolled and
+            rendered by the shared component: nothing fills them automatically,
+            and a controlled checkbox group here would be state for its own
+            sake. Both post by name, and `readField` reads either back.
+          */}
+          {template.fields.map((field) =>
+            fieldType(field) === "prose" ? (
+              <div key={field.id}>
+                <label htmlFor={`note_${field.id}`} className="block text-sm font-medium">
+                  {field.label}
+                  {field.required ? <span className="text-rose-600"> *</span> : null}
+                </label>
+                <textarea
+                  id={`note_${field.id}`}
+                  name={field.id}
+                  rows={field.rows}
+                  value={typeof body[field.id] === "string" ? (body[field.id] as string) : ""}
+                  onChange={(e) => setBody((prev) => ({ ...prev, [field.id]: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-relaxed"
+                />
+              </div>
+            ) : (
+              <TemplateFieldInput
+                key={field.id}
+                field={field}
+                value={body[field.id]}
+                needs={needs}
               />
-            </div>
-          ))}
+            )
+          )}
 
           {saveState.error ? (
             <div role="alert" className="rounded border border-rose-300 bg-rose-50 p-3">

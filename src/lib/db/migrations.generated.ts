@@ -7,5 +7,6 @@ export const EXPECTED_MIGRATIONS: readonly string[] = [
   "20260811120000_client_names_and_discipline",
   "20260811170000_self_service_portals_and_whatsapp_shares",
   "20260812130000_shareable_documents_beyond_submissions",
-  "20260814200000_field_agent_links"
+  "20260814200000_field_agent_links",
+  "20260814230000_practice_needs"
 ];

@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { kimiJson } from "@/lib/ai/kimi";
-import { TEMPLATES } from "@/lib/intake/templates";
+import { TEMPLATES, fieldType } from "@/lib/intake/templates";
 import type { TemplateKind } from "@prisma/client";
 
 /**
@@ -39,10 +39,21 @@ export async function draftNote(
   sourceText: string
 ): Promise<DraftResult | null> {
   const template = TEMPLATES[kind];
-  const fieldIds = template.fields.map((f) => f.id);
+  /*
+   * Prose fields only.
+   *
+   * The model is asked to reorganise words into sections. A picker is not
+   * words — asking for `{ type: "string" }` on a needs list would invite it to
+   * invent "housing, food" as prose, and whatever came back would overwrite a
+   * set of choices a person actually made. Those fields are left exactly as the
+   * clinician set them, which is also the rule at the top of this file: a
+   * machine may propose, only a named human commits.
+   */
+  const proseFields = template.fields.filter((f) => fieldType(f) === "prose");
+  const fieldIds = proseFields.map((f) => f.id);
 
   const properties: Record<string, unknown> = {};
-  for (const field of template.fields) {
+  for (const field of proseFields) {
     properties[field.id] = { type: "string" };
   }
   properties.gaps = { type: "array", items: { type: "string" } };
@@ -58,7 +69,7 @@ Absolute rules:
 - Preserve any [?] markers from the transcript; they mark words a human could not read.
 - Return only the JSON object.
 
-Fields: ${template.fields.map((f) => `${f.id} (${f.label}: ${f.hint})`).join("; ")}`,
+Fields: ${proseFields.map((f) => `${f.id} (${f.label}: ${f.hint})`).join("; ")}`,
     user: `SOURCE MATERIAL:\n\n${sourceText.slice(0, 12000)}`,
     schema: {
       type: "object",

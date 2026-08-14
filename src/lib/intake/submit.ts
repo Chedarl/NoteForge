@@ -1,5 +1,6 @@
 import "server-only";
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { sendMail, siteUrl } from "@/lib/email/send";
@@ -32,7 +33,13 @@ export interface SubmitInput {
   kind: SubmissionKind;
   templateKind: TemplateKind;
   encounterDate: Date;
-  fields: Record<string, string>;
+  /*
+   * `unknown` rather than `string`, because a field's value now depends on its
+   * type: prose is a string, a picker is `string[]`, a severity field is an
+   * object. Prisma stores it as Json either way; what mattered was that every
+   * reader stopped assuming a string, which is what `renderFieldValue` is for.
+   */
+  fields: Record<string, unknown>;
   /** Free text for a narrative or the notes accompanying a photo set. */
   extraText?: string;
   /**
@@ -74,7 +81,10 @@ export async function submitEncounter(input: SubmitInput): Promise<SubmitResult>
     templateKind: input.templateKind,
     discipline: input.discipline ?? input.submittedBy.discipline ?? null,
     encounterDate: input.encounterDate,
-    fields: input.fields,
+    // Cast at the single point where answers enter the database, rather than
+    // widening the domain type — the shape is validated by the template the
+    // caller read the form against.
+    fields: input.fields as Prisma.InputJsonObject,
     rawText: text,
     contentHash: contentHash(text),
     normalizedText: normalizeForCompare(text),
