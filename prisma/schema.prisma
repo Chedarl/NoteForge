@@ -70,6 +70,7 @@ model Practice {
   statusConfirmations StatusConfirmation[]
   shareLinks          ShareLink[]
   fieldLinks          FieldLink[]
+  needs               PracticeNeed[]
 }
 
 enum UserRole {
@@ -424,6 +425,35 @@ model Submission {
 /// Only a SHA-256 hash of the bearer token is stored, so a database read cannot
 /// be turned into a working download link. The PDF itself remains in the private
 /// note-exports bucket and can only be retrieved through the token route.
+/// A need this practice added on top of the standard list.
+///
+/// The standard vocabulary is a constant in `src/lib/intake/needs.ts` and is
+/// deliberately not stored — a fixed spine is what lets two practices' data be
+/// compared, and a copy in every database is a copy that drifts. Only local
+/// additions live here.
+///
+/// Retired rather than deleted, always: a submission filed last year holds the
+/// id, and deleting the row would leave that submission rendering a bare slug
+/// where a person's housing problem used to be.
+model PracticeNeed {
+  id String @id @default(cuid())
+
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  /// Prefixed `local_` at creation so it can never collide with a standard id,
+  /// including one added to the standard list in a future version.
+  needId String
+  label  String
+  hint   String?
+
+  retiredAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([practiceId, needId])
+  @@index([practiceId, retiredAt])
+}
+
 /// A durable way in for somebody who will never have an account.
 ///
 /// Separate from `ShareLink`, which points *out* at one document and expires in

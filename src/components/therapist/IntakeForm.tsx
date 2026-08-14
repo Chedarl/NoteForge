@@ -1,12 +1,14 @@
 "use client";
 
+import TemplateFieldInput from "@/components/shared/TemplateField";
+import type { NeedDefinition } from "@/lib/intake/needs";
+
 import { useActionState, useMemo, useState } from "react";
 import Link from "next/link";
 import { submitStructuredNote, type IntakeState } from "@/lib/intake/actions";
 import { TEMPLATES } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { STATUS_LABEL } from "@/lib/clients/labels";
-import Dictate from "@/components/therapist/Dictate";
 import { StatusBadge } from "@/components/shared/ui";
 import ShareOnWhatsApp from "@/components/shared/ShareOnWhatsApp";
 import type { ClientStatus, Discipline, TemplateKind } from "@prisma/client";
@@ -42,6 +44,7 @@ export default function IntakeForm({
   allowedTemplates,
   discipline,
   defaultWhatsApp,
+  needs,
 }: {
   clients: ClientOption[];
   preselectedClientId: string;
@@ -49,6 +52,8 @@ export default function IntakeForm({
   allowedTemplates: TemplateKind[];
   discipline: Discipline;
   defaultWhatsApp: string;
+  /** Standard needs plus whatever this practice has added. Resolved server-side. */
+  needs: NeedDefinition[];
 }) {
   const [clientId, setClientId] = useState(preselectedClientId || clients[0]?.id || "");
   const [templateKind, setTemplateKind] = useState<TemplateKind>(allowedTemplates[0]);
@@ -177,22 +182,7 @@ export default function IntakeForm({
       {/* ── Template fields ────────────────────────────────────────────── */}
       <div className="space-y-4">
         {template.fields.map((field) => (
-          <div key={field.id}>
-            <div className="flex items-baseline justify-between gap-2">
-              <label htmlFor={field.id} className="block text-sm font-medium">
-                {field.label}
-                {field.required ? <span className="text-rose-600"> *</span> : null}
-              </label>
-              <Dictate targetId={field.id} />
-            </div>
-            <p className="text-xs text-slate-500">{field.hint}</p>
-            <textarea
-              id={field.id}
-              name={field.id}
-              rows={field.rows}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm leading-relaxed"
-            />
-          </div>
+          <TemplateFieldInput key={field.id} field={field} needs={needs} />
         ))}
       </div>
 

@@ -6,8 +6,9 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { writeAudit } from "@/lib/audit";
 import { finishVerification } from "@/lib/intake/submit";
-import { assessCompleteness, TEMPLATES, flattenFields } from "@/lib/intake/templates";
+import { assessCompleteness, TEMPLATES, flattenFields, readField } from "@/lib/intake/templates";
 import { draftNote } from "@/lib/ai/noteDraft";
+import { Prisma } from "@prisma/client";
 import type { FlagResolution, TagKind, TemplateKind } from "@prisma/client";
 
 /**
@@ -201,9 +202,18 @@ export async function saveNote(_prev: NoteState, formData: FormData): Promise<No
   if (!submission || !submission.note) return { error: "That note could not be found." };
 
   const templateKind = submission.note.templateKind as TemplateKind;
-  const body: Record<string, string> = {};
+  /*
+   * Read by field type, not as strings.
+   *
+   * `String(formData.get(id))` destroyed a picker's answer on the first save of
+   * the note — the array arrived from the submission, was coerced to
+   * "housing,food", and the structure was gone for good. A multi field is read
+   * with `getAll`, which is also the only way a repeated checkbox name survives
+   * at all.
+   */
+  const body: Record<string, unknown> = {};
   for (const field of TEMPLATES[templateKind].fields) {
-    body[field.id] = String(formData.get(field.id) ?? "").trim();
+    body[field.id] = readField(field, formData);
   }
 
   if (intent === "sign") {
@@ -223,13 +233,18 @@ export async function saveNote(_prev: NoteState, formData: FormData): Promise<No
       // new version, and the version number is what makes that visible.
       await prisma.note.update({
         where: { id: submission.note.id },
-        data: { body, version: { increment: 1 }, signedById: user.id, signedAt: new Date() },
+        data: {
+          body: body as Prisma.InputJsonObject,
+          version: { increment: 1 },
+          signedById: user.id,
+          signedAt: new Date(),
+        },
       });
     } else {
       await prisma.note.update({
         where: { id: submission.note.id },
         data: {
-          body,
+          body: body as Prisma.InputJsonObject,
           state: "SIGNED",
           signedById: user.id,
           signedAt: new Date(),
@@ -256,7 +271,10 @@ export async function saveNote(_prev: NoteState, formData: FormData): Promise<No
     return { signed: true };
   }
 
-  await prisma.note.update({ where: { id: submission.note.id }, data: { body } });
+  await prisma.note.update({
+    where: { id: submission.note.id },
+    data: { body: body as Prisma.InputJsonObject },
+  });
   return { saved: true };
 }
 

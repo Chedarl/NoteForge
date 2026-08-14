@@ -1,4 +1,5 @@
 import type { TemplateKind } from "@prisma/client";
+import { labelsForNeeds } from "@/lib/intake/needs";
 
 /**
  * The note templates, defined once and used in four places: the therapist's
@@ -15,6 +16,30 @@ import type { TemplateKind } from "@prisma/client";
  * has to change how it documents will simply not adopt this.
  */
 
+/**
+ * What kind of control a field is, and therefore what shape its value has.
+ *
+ * Added because every field used to be a textarea, which is the wrong control
+ * for "which of these fifteen things apply" — and because a picker's value is
+ * an array, which several places in this codebase quietly assumed could never
+ * happen. See the note on `flattenFields` below for the worst of them.
+ *
+ *  - `prose`    a textarea. The default, and every pre-existing field.
+ *  - `choice`   one of a fixed set. Value is a string.
+ *  - `multi`    any number of a fixed set. **Value is `string[]`.**
+ *  - `severity` a graded answer with a note beside it. Value is
+ *               `{ level: string; note: string }`.
+ */
+export type FieldType = "prose" | "choice" | "multi" | "severity";
+
+/** Below this, a prose answer is a placeholder rather than a record. */
+const MIN_MEANINGFUL_CHARS = 8;
+
+export interface FieldOption {
+  id: string;
+  label: string;
+}
+
 export interface TemplateField {
   id: string;
   label: string;
@@ -22,6 +47,126 @@ export interface TemplateField {
   hint: string;
   required: boolean;
   rows: number;
+  /** Absent means `prose`, so every template written before this existed is unchanged. */
+  type?: FieldType;
+  /** Required for `choice` and `severity`; `multi` may instead source its own. */
+  options?: FieldOption[];
+  /**
+   * A `multi` field whose options are not fixed in code — today only the
+   * psychosocial needs list, which is a standard spine plus whatever the
+   * practice has added. The renderer is handed the resolved list.
+   */
+  optionSource?: "needs";
+}
+
+/** Narrowing helper, so callers stop repeating the `?? "prose"` default. */
+export function fieldType(field: TemplateField): FieldType {
+  return field.type ?? "prose";
+}
+
+/** The shape a `severity` field stores. */
+export interface SeverityValue {
+  level: string;
+  note: string;
+}
+
+export function isSeverityValue(value: unknown): value is SeverityValue {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.level === "string" && typeof v.note === "string";
+}
+
+/**
+ * Reads one field out of a submitted form, in the shape its type says.
+ *
+ * Lives here rather than in each action because there are now three places that
+ * turn a form into stored answers — intake, the quick paths, and the note
+ * editor — and a picker read with `formData.get` silently keeps only the first
+ * ticked box. That is not a crash; it is four of a client's five needs quietly
+ * disappearing between the form and the record.
+ */
+export function readField(field: TemplateField, form: FormData): unknown {
+  switch (fieldType(field)) {
+    case "multi":
+      // `getAll`, because a checkbox group posts its name once per tick and
+      // `get` would return only the first.
+      return form
+        .getAll(field.id)
+        .map((v) => String(v).trim())
+        .filter(Boolean);
+    case "severity":
+      return {
+        level: String(form.get(`${field.id}__level`) ?? "").trim(),
+        note: String(form.get(`${field.id}__note`) ?? "").trim(),
+      } satisfies SeverityValue;
+    case "choice":
+    case "prose":
+    default:
+      return String(form.get(field.id) ?? "").trim();
+  }
+}
+
+/**
+ * One field's answer as a person would read it.
+ *
+ * Every export, hash and comparison in this product ultimately wants a string,
+ * and before field types existed they each did their own `typeof value ===
+ * "string"` check. That is exactly how an array would have disappeared from the
+ * ZIP, the PDF and the dedupe hash independently, in three different ways. One
+ * function now, used by all of them.
+ *
+ * Returns an empty string for "nothing recorded", so callers keep their
+ * existing falsy checks.
+ */
+export function renderFieldValue(value: unknown, field?: TemplateField): string {
+  if (typeof value === "string") {
+    // A `choice` stores an option id; a note writer should not be reading ids.
+    const option = field?.options?.find((o) => o.id === value.trim());
+    return option ? option.label : value.trim();
+  }
+  if (Array.isArray(value)) {
+    const ids = value
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .map((item) => item.trim());
+    /*
+     * Ids become labels here, not at the form.
+     *
+     * What is stored is `["housing", "identification"]`, because ids are what
+     * survive a label being reworded. What a note writer opening the export
+     * needs to read is "Housing, Identification and documents". Resolving at
+     * render time gets both — and it is why the standard vocabulary is a
+     * client-safe constant rather than database rows.
+     */
+    if (field?.optionSource === "needs") return labelsForNeeds(ids).join(", ");
+    if (field?.options) {
+      return ids
+        .map((id) => field.options?.find((o) => o.id === id)?.label ?? id)
+        .join(", ");
+    }
+    return ids.join(", ");
+  }
+  if (isSeverityValue(value)) {
+    const levelId = value.level.trim();
+    const level = field?.options?.find((o) => o.id === levelId)?.label ?? levelId;
+    const note = value.note.trim();
+    if (!level && !note) return "";
+    return note ? `${level} — ${note}` : level;
+  }
+  return "";
+}
+
+/**
+ * Whether a field has been answered at all.
+ *
+ * Separate from `renderFieldValue` being non-empty because the thresholds
+ * differ: eight characters is a sensible floor for prose and meaningless for a
+ * picker, where one tick is a complete answer.
+ */
+export function hasAnswer(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length >= MIN_MEANINGFUL_CHARS;
+  if (Array.isArray(value)) return value.some((i) => typeof i === "string" && i.trim());
+  if (isSeverityValue(value)) return value.level.trim().length > 0;
+  return false;
 }
 
 export interface Template {
@@ -155,10 +300,35 @@ export const TEMPLATES: Record<TemplateKind, Template> = {
         rows: 5,
       },
       {
-        id: "needs",
-        label: "Needs identified",
-        hint: "What the client needs, in their own framing where possible, and how urgent each is.",
+        /*
+         * The picker, and the reason field types exist.
+         *
+         * This was a textarea, which could not be counted, compared or carried
+         * forward — two workers writing "no stable housing" and "homeless"
+         * about the same person produced two unrelated strings. Ticking is also
+         * simply faster than describing, which was the complaint that started
+         * this work.
+         */
+        id: "needsList",
+        label: "What this person needs",
+        hint: "Tick everything that applies. The office can see how this moves over time.",
         required: true,
+        rows: 0,
+        type: "multi",
+        optionSource: "needs",
+      },
+      {
+        /*
+         * Kept beside the picker rather than replaced by it. A list says which
+         * domains apply and never says what is actually happening — "housing"
+         * covers both an eviction notice due Friday and a sofa they have slept
+         * on for a year, and a note writer needs the difference. No longer
+         * required, because the picker now carries the part that must be there.
+         */
+        id: "needs",
+        label: "In their words",
+        hint: "What the person said about what they need, and how urgent it is to them.",
+        required: false,
         rows: 4,
       },
       {
@@ -240,14 +410,25 @@ export const TEMPLATES: Record<TemplateKind, Template> = {
 export const TEMPLATE_LIST: Template[] = Object.values(TEMPLATES);
 
 /** Every field's text, in template order, as one string. */
+/**
+ * The whole submission as one block of text.
+ *
+ * This is not only for display — `submitEncounter` derives `rawText`,
+ * `contentHash` and `normalizedText` from it, which means **duplicate detection
+ * is built on this function's output**. When it silently dropped every
+ * non-string value, a submission whose answers were all pickers produced an
+ * empty string, an identical hash to every other such submission, and a
+ * duplicate flag against all of them. Nothing threw. That is why the value
+ * rendering lives in `renderFieldValue` and every caller shares it.
+ */
 export function flattenFields(
   kind: TemplateKind,
   fields: Record<string, unknown>
 ): string {
   return TEMPLATES[kind].fields
     .map((f) => {
-      const value = fields[f.id];
-      return typeof value === "string" && value.trim() ? `${f.label}: ${value.trim()}` : "";
+      const rendered = renderFieldValue(fields[f.id], f);
+      return rendered ? `${f.label}: ${rendered}` : "";
     })
     .filter(Boolean)
     .join("\n\n");
@@ -269,19 +450,16 @@ export interface Completeness {
  * detail a clinician should write. Anything stricter would be this tool having
  * an opinion about clinical practice, which it has no standing to have.
  */
-const MIN_MEANINGFUL_CHARS = 8;
-
 export function assessCompleteness(
   kind: TemplateKind,
   fields: Record<string, unknown>
 ): Completeness {
   const required = TEMPLATES[kind].fields.filter((f) => f.required);
-  const missing = required
-    .filter((f) => {
-      const value = fields[f.id];
-      return typeof value !== "string" || value.trim().length < MIN_MEANINGFUL_CHARS;
-    })
-    .map((f) => f.label);
+  // `hasAnswer` rather than a length check: one ticked box is a complete answer
+  // to a picker, and the eight-character floor that is right for prose would
+  // have made a required picker field permanently incomplete — which blocks
+  // signing the note, not just the form.
+  const missing = required.filter((f) => !hasAnswer(fields[f.id])).map((f) => f.label);
 
   const filled = required.length - missing.length;
   return {

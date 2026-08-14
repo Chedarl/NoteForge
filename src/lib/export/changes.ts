@@ -1,7 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
-import { TEMPLATES } from "@/lib/intake/templates";
+import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
 import { cleanText } from "@/lib/dedupe/normalize";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import type { Submission, TemplateKind } from "@prisma/client";
@@ -79,11 +79,27 @@ function sameValue(a: string, b: string): boolean {
   return cleanText(a) === cleanText(b);
 }
 
-function stringFields(raw: unknown): Record<string, string> {
+/**
+ * Every answer as comparable text, whatever shape it was stored in.
+ *
+ * This dropped non-strings, which meant a client going from three needs to
+ * seven reported "unchanged" — the comparison that makes the picker worth
+ * having, reporting the opposite of the truth. Rendering through the shared
+ * helper means a set change reads as a change.
+ *
+ * It compares the rendered form rather than the set itself, so re-ordering the
+ * same selections still reads as unchanged: `labelsForNeeds` emits them in list
+ * order rather than click order for exactly this reason.
+ */
+function stringFields(raw: unknown, kind: TemplateKind): Record<string, string> {
   const out: Record<string, string> = {};
   const source = (raw ?? {}) as Record<string, unknown>;
+  // Keyed by the template's own fields so option ids resolve to labels — a
+  // change reported as "housing → housing, food" rather than as raw slugs.
+  const byId = new Map(TEMPLATES[kind].fields.map((f) => [f.id, f]));
   for (const [key, value] of Object.entries(source)) {
-    if (typeof value === "string" && value.trim()) out[key] = value.trim();
+    const rendered = renderFieldValue(value, byId.get(key));
+    if (rendered) out[key] = rendered;
   }
   return out;
 }
@@ -154,8 +170,11 @@ export async function summariseChanges(
     };
   }
 
-  const now = stringFields(submission.fields);
-  const before = stringFields(previous.fields);
+  // Both sides are read against the *current* submission's template. The
+  // `comparable` gate above has already established they share one.
+  const kind = submission.templateKind as TemplateKind;
+  const now = stringFields(submission.fields, kind);
+  const before = stringFields(previous.fields, kind);
 
   const fields: FieldChange[] = TEMPLATES[submission.templateKind as TemplateKind].fields.map(
     (field) => {

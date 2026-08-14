@@ -4,6 +4,7 @@ import IntakeForm from "@/components/therapist/IntakeForm";
 import { EmptyState } from "@/components/shared/ui";
 import { identityOf } from "@/lib/clients/identity";
 import { templatesFor } from "@/lib/intake/disciplines";
+import { practiceNeeds } from "@/lib/intake/practiceNeeds";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export default async function NewNotePage({
   searchParams: Promise<{ client?: string }>;
 }) {
   const user = await requireRole(["THERAPIST", "OWNER"]);
+  const needs = await practiceNeeds(user.practiceId);
   const { client: preselected } = await searchParams;
 
   // Non-active clients are fetched too, and shown, disabled, with their status.
@@ -89,6 +91,7 @@ export default async function NewNotePage({
         }))}
         preselectedClientId={preselected ?? ""}
         allowedTemplates={templatesFor(user.discipline)}
+        needs={needs}
         discipline={user.discipline}
         defaultWhatsApp={practice?.noteWriterWhatsApp ?? ""}
       />
