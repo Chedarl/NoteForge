@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { whatsappConfigured } from "@/lib/whatsapp/send";
 import { fieldCryptoConfigured } from "@/lib/crypto/field";
 import { EXPECTED_MIGRATIONS } from "@/lib/db/migrations.generated";
+import { readerConfigured } from "@/lib/ai/reader";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -163,6 +164,14 @@ export async function GET() {
     storageForPhotos: storagePages,
     /** Every WhatsApp share link needs this one. */
     storageForShares: storageExports,
+    /*
+     * A key is present, which is not the same as the reader working — the key
+     * can be revoked, out of credit, or pinned to a model that has been
+     * withdrawn. `/api/health/ocr` makes a real call and answers that properly;
+     * it is authenticated because it costs money to run. This boolean is the
+     * cheap half, and is the one that explains an empty transcript box.
+     */
+    handwritingReading: readerConfigured(),
     whatsappDelivery: whatsappConfigured(),
     email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
   };
@@ -170,7 +179,15 @@ export async function GET() {
   // Everything a person can sign in and file a typed update without. Photograph
   // upload and share links each need their bucket, so those are not optional if
   // you intend to use them — but they do not stop the core path working.
-  const optional = new Set(["whatsappDelivery", "email", "storageForPhotos", "storageForShares"]);
+  const optional = new Set([
+    "whatsappDelivery",
+    "email",
+    "storageForPhotos",
+    "storageForShares",
+    // Absent, every page simply gets typed — which is the process this
+    // replaces, so it cannot be what makes a deployment "not ready".
+    "handwritingReading",
+  ]);
   const missing = Object.entries(checks)
     .filter(([key, ok]) => !ok && !optional.has(key))
     .map(([key]) => key);
