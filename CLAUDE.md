@@ -72,6 +72,7 @@ src/lib/clients/resolve.ts a typed name finds or creates the client — read the
 src/lib/export/rosterPdf.tsx the caseload as a document — who is still open
 src/lib/clients/roster.ts  builds and sends the client list
 src/app/api/health/route.ts is this deployment wired up? booleans, never values
+src/lib/db/migrations.generated.ts generated: what /api/health diffs against
 src/lib/insights/          metrics as live Prisma aggregates
 src/app/t/                 clinician portal (mobile-first)
 src/app/s/                 internal workspace: queue, verify, note, download, insights, audit
@@ -142,9 +143,37 @@ cause was found, and each looked like a different bug.
 A failed migration **warns loudly and lets the build continue**. Blocking every
 deployment on a database hiccup would also block the deployment that fixes it,
 and the app already detects an out-of-date schema and explains it — `/api/health`
-reports `schemaUpToDate`, and the write, signup and settings screens each say so
-rather than crashing. Without `DIRECT_URL` it skips entirely, so building
-locally does not migrate anything as a side effect.
+reports `schemaUpToDate` and names what is missing, and the write, signup and
+settings screens each say so rather than crashing.
+
+### `db.<ref>.supabase.co` is unreachable from Vercel, and nothing says so
+
+This one cost days and produced what looked like half a dozen unrelated bugs.
+Supabase's **direct** host is IPv6-only unless the IPv4 add-on is bought, and
+Vercel's build machines are IPv4. So the string the Supabase Connect panel
+presents as "the direct connection" — and that the Supabase-to-Vercel integration
+writes into `DIRECT_URL` for you — can *never* connect from a build. It fails
+P1001 on every deployment, the build continues by design, and the schema quietly
+stays behind the code.
+
+Correcting it in the dashboard did not stick, repeatedly: the value is copied out
+of a panel that does not include the right host, and the integration can rewrite
+it. So the script no longer depends on it being right. It tries the configured
+`DIRECT_URL` first — someone who bought the add-on, or is on plain Postgres, is
+correct and must not be overridden — and then falls back to a **session pooler**
+URL derived from `DATABASE_URL`, since the session pooler is the same host as the
+transaction pooler on port 5432 with the pgbouncer flags removed. It never prints
+a connection string; the host and port are enough to tell attempts apart.
+
+The runtime half of the same problem is in `src/lib/prisma.ts`: port 6543 is
+PgBouncer in transaction mode, and without `pgbouncer=true` Prisma's prepared
+statements produce 42P05 and 26000 errors at random on whichever page loaded.
+That flag is now derived from the port rather than relied upon in the URL, for
+the same reason — every copy-paste step between Supabase and Vercel drops it.
+
+Without either `DIRECT_URL` or `DATABASE_URL` the script skips entirely. Note it
+does *not* skip merely because `DIRECT_URL` is unset: a local `DATABASE_URL` is
+used, so `npm run build` against a development database migrates it.
 
 It also skips on **Vercel preview builds** (`VERCEL_ENV` set to anything but
 `production`). One Supabase project sits behind every environment, so a preview
@@ -161,6 +190,23 @@ wipes the schema the build just applied. CI creates a separate `shadow` database
 for this; locally it is the second database in the setup above. This bit CI the
 moment the build started migrating, and the failure reads as schema drift when
 it is nothing of the kind.
+
+### `/api/health` compares the migration ledger, not a hand-picked column
+
+It used to probe two specific things a past migration had added. That reported
+`schemaUpToDate: true` against a database missing `ShareLink.documentKind`, which
+is worse than reporting nothing — the build log tells you to check this endpoint,
+so a false green sends you looking somewhere else. A canary chosen by hand only
+detects the lag it was written for.
+
+It now reads `_prisma_migrations` and diffs it against `EXPECTED_MIGRATIONS` in
+`src/lib/db/migrations.generated.ts`, which `scripts/write-migration-manifest.mjs`
+regenerates from the migrations directory on every build (the directory is not in
+a Next.js server bundle, so the list has to be baked in). The generated file is
+committed because `typecheck` and `dev` do not run the build chain, and CI runs
+the script with `--check` so a stale copy is a red build. The response names the
+missing migrations rather than only counting them — a migration name is a folder
+name in the repository, not a secret.
 
 ### A schema lag takes down every page, not the ones you would guess
 

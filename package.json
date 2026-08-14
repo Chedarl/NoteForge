@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && node scripts/migrate-on-deploy.mjs && next build",
+    "build": "prisma generate && node scripts/write-migration-manifest.mjs && node scripts/migrate-on-deploy.mjs && next build",
+    "migrations:manifest": "node scripts/write-migration-manifest.mjs",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",

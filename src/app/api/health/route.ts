@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { whatsappConfigured } from "@/lib/whatsapp/send";
 import { fieldCryptoConfigured } from "@/lib/crypto/field";
+import { EXPECTED_MIGRATIONS } from "@/lib/db/migrations.generated";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,17 +40,33 @@ export async function GET() {
    * column throws. That looks like "the app is broken" and is really "migrations
    * were never run", so it is worth telling those two apart in one request.
    *
-   * `noteWriterWhatsApp` is the newest column the write screen depends on, which
-   * makes it the right canary — if it is missing, `/t/write` cannot render.
+   * This used to probe two specific things — a `noteWriterWhatsApp` column and
+   * the `ShareLink` table — and that was worse than useless, because it read
+   * `true` against a database missing `ShareLink.documentKind` and sent someone
+   * looking somewhere else entirely. A canary chosen by hand only ever detects
+   * the lag it was written for; the migration after it ships and the canary does
+   * not move.
+   *
+   * So compare the ledger instead. Prisma records every applied migration in
+   * `_prisma_migrations`, and `EXPECTED_MIGRATIONS` is generated from the
+   * migrations directory at build time, which makes this exact by construction
+   * for every future migration without anybody remembering to update it.
    */
   let schemaUpToDate = false;
+  let missingMigrations: string[] = [];
   if (database) {
     try {
-      await prisma.practice.findFirst({ select: { noteWriterWhatsApp: true } });
-      await prisma.shareLink.count();
-      schemaUpToDate = true;
+      const rows = await prisma.$queryRaw<{ migration_name: string }[]>`
+        SELECT migration_name FROM "_prisma_migrations"
+        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+      `;
+      const applied = new Set(rows.map((row) => row.migration_name));
+      missingMigrations = EXPECTED_MIGRATIONS.filter((name) => !applied.has(name));
+      schemaUpToDate = missingMigrations.length === 0;
     } catch {
-      // Left false: the migrations have not been applied to this database.
+      // No `_prisma_migrations` table at all means nothing has ever been
+      // applied, which is the most behind a database can be.
+      missingMigrations = [...EXPECTED_MIGRATIONS];
     }
   }
 
@@ -82,7 +99,7 @@ export async function GET() {
 
   const checks = {
     database,
-    /** False means `npx prisma migrate deploy` has not been run against it. */
+    /** False means migrations are pending; `missingMigrations` names them. */
     schemaUpToDate,
     supabaseUrl,
     supabaseAnonKey,
@@ -112,6 +129,12 @@ export async function GET() {
       ready: missing.length === 0,
       missing,
       checks,
+      /*
+       * Named, not just counted. A migration name is not a secret — it is a
+       * folder name in the repository — and it is the difference between "the
+       * database is behind" and knowing which change never landed.
+       */
+      missingMigrations,
       note: "true means the value is present, never what it is.",
     },
     { headers: { "Cache-Control": "no-store" } }
