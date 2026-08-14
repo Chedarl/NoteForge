@@ -273,6 +273,29 @@ npx prisma migrate diff --from-migrations prisma/migrations \
   --shadow-database-url "postgresql://postgres@localhost:5433/shadow?schema=public&host=/tmp" --script
 ```
 
+### One base URL, and it broke everything that leaves the building
+
+`siteUrl()` fell back to `http://localhost:3000` when `NEXT_PUBLIC_SITE_URL` was
+unset, which it was in production. A clinician sent a note writer
+`http://localhost:3000/share/<token>`. The PDF was stored, the token was valid,
+the row was in the database — and the link opened nothing on anybody's phone.
+
+The same function builds invitations, the password-set redirect, status
+confirmation links and the roster PDF, so one unset variable broke every one of
+them simultaneously. And it is invisible from inside: every page works, the send
+reports success, and only the recipient ever sees the problem.
+
+It is derived now rather than depended upon.
+`VERCEL_PROJECT_PRODUCTION_URL` is preferred **even on previews**, because a
+share link must outlive the deployment that made it — it sits in somebody's
+WhatsApp for days — and every deployment shares one database and one bucket, so
+production can serve a link a preview created. `VERCEL_URL` is per-deployment
+and changes on every push; a link built from it works when you test it and dies
+at the next merge, which is the worse failure. Last resort only.
+
+`/api/health` reports `outboundLinks`, and it is **not** optional. A deployment
+that cannot produce a reachable link is not ready, however well it renders.
+
 ### Is the handwriting reader actually working?
 
 `readHandwriting` cannot tell you, on purpose: absent key, rejected key,

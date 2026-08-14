@@ -59,6 +59,62 @@ export async function sendMail(input: MailInput): Promise<boolean> {
   }
 }
 
+/**
+ * Where this deployment lives, for links that leave the building.
+ *
+ * Every outbound link is built from this: WhatsApp share links, invitations,
+ * the password-set redirect, status-confirmation links, the roster PDF. So when
+ * it is wrong, it is wrong everywhere at once and in a way that is invisible
+ * from inside the app — the pages all work, and only the recipient sees it.
+ *
+ * It was wrong. `NEXT_PUBLIC_SITE_URL` was never set in production, so this
+ * returned the development fallback and a clinician sent a note writer
+ * `http://localhost:3000/share/<token>`. The document was stored correctly, the
+ * token was valid, the row was in the database — and the link opened nothing on
+ * anybody's phone.
+ *
+ * So it is derived rather than depended upon, the same way `DATABASE_URL` is.
+ * Vercel already publishes the answer:
+ *
+ * - `VERCEL_PROJECT_PRODUCTION_URL` is the **stable** production domain, and is
+ *   preferred even on a preview deployment. A share link has to outlive the
+ *   deployment that made it — it sits in somebody's WhatsApp for days — and
+ *   these links are served from a database and a bucket that every deployment
+ *   shares, so production can serve one a preview created.
+ * - `VERCEL_URL` is per-deployment and changes on every push. A link built from
+ *   it dies the next time anybody merges anything, which is worse than a link
+ *   that never worked, because it works when you test it. Last resort only.
+ *
+ * An explicit `NEXT_PUBLIC_SITE_URL` still wins, because that is what a custom
+ * domain will need. `localhost` remains only for a laptop with no Vercel
+ * variables present at all.
+ */
 export function siteUrl(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (explicit) return withScheme(explicit).replace(/\/$/, "");
+
+  const production = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (production) return withScheme(production).replace(/\/$/, "");
+
+  const deployment = process.env.VERCEL_URL?.trim();
+  if (deployment) return withScheme(deployment).replace(/\/$/, "");
+
+  return "http://localhost:3000";
+}
+
+/** Vercel's variables carry a bare hostname; a configured one may not. */
+function withScheme(value: string): string {
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
+/**
+ * False when links would be built from the localhost fallback — meaning
+ * anything sent out of this deployment is unreachable by its recipient.
+ */
+export function siteUrlConfigured(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+      process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
+      process.env.VERCEL_URL?.trim()
+  );
 }
