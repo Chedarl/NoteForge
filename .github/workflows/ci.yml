@@ -53,6 +53,33 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
 
+      - name: Migrations apply with only the integration's variables
+        # The deployment platform may supply POSTGRES_PRISMA_URL and no
+        # DATABASE_URL at all — that is what the Supabase↔Vercel integration
+        # writes — and that exact shape shipped broken. Prisma validates the
+        # whole datasource block before using any of it, so `url =
+        # env("DATABASE_URL")` failed with P1012 before a connection was tried,
+        # and every candidate in the fallback chain was refused at the door.
+        #
+        # It survived review and two green builds because nothing exercised it:
+        # a developer has DATABASE_URL in .env, CI has it in `env:` above, and
+        # production is the only place without one. Hence `env -u`.
+        env:
+          PGPASSWORD: ci
+        run: |
+          psql -h localhost -p 5432 -U ci -d ci -c 'CREATE DATABASE integration_vars;'
+          env -u DATABASE_URL -u DIRECT_URL \
+            POSTGRES_PRISMA_URL="postgresql://ci:ci@localhost:5432/integration_vars?schema=public" \
+            node scripts/migrate-on-deploy.mjs
+          applied=$(psql -h localhost -p 5432 -U ci -d integration_vars -tAc \
+            'SELECT count(*) FROM "_prisma_migrations" WHERE finished_at IS NOT NULL;')
+          expected=$(ls -d prisma/migrations/*/ | wc -l)
+          echo "applied=$applied expected=$expected"
+          [ "$applied" = "$expected" ] || {
+            echo "migrate-on-deploy did not apply every migration using only POSTGRES_PRISMA_URL"
+            exit 1
+          }
+
       - name: Create the shadow database
         # Separate from DATABASE_URL, and that separation is the whole point.
         # `migrate diff` replays every migration into the shadow database from

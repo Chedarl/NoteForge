@@ -191,6 +191,38 @@ for this; locally it is the second database in the setup above. This bit CI the
 moment the build started migrating, and the failure reads as schema drift when
 it is nothing of the kind.
 
+### `.env` and CI both hide the one environment that matters
+
+The fallback chain above shipped broken and passed everything: a green local
+build, a green CI run, and a green production build that quietly applied
+nothing. Prisma validates the *whole* datasource block before it uses any of it,
+and `url` is `env("DATABASE_URL")` — so on a deployment carrying only the
+integration's `POSTGRES_*` variables, every candidate died with P1012
+"Environment variable not found: DATABASE_URL" before a single connection was
+attempted. `spawnSync` now sets `DATABASE_URL` and `DIRECT_URL` both, to the
+same candidate; `migrate deploy` connects through `directUrl` and `url` only has
+to be present and well-formed.
+
+Nothing caught it because nothing *could*. A developer has `DATABASE_URL` in
+`.env`, which Prisma loads by itself — the log line "Environment variables
+loaded from .env" is the tell — and CI has it in the workflow's `env:` block.
+Production is the only place without one, so production was the only place the
+code path ran at all.
+
+Two habits come out of this, and both are cheap:
+
+- **Test with `env -u DATABASE_URL` and `.env` moved aside** when touching
+  anything that resolves a connection string. `env -u` alone is not enough.
+- **Do not filter stderr out of a verification run.** The first check of this
+  path piped through `grep '^\[migrate\]'`, which showed the script's own
+  narration and dropped Prisma's P1012 underneath it. It read as a network
+  failure against a fake host. A filter that hides the failure you are looking
+  for is worse than no filter.
+
+CI now runs `migrate-on-deploy.mjs` against a scratch database with only
+`POSTGRES_PRISMA_URL` set and asserts every migration applied, so the shape that
+only production has is exercised on every push.
+
 ### `/api/health` compares the migration ledger, not a hand-picked column
 
 It used to probe two specific things a past migration had added. That reported

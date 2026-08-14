@@ -193,9 +193,22 @@ for (const [index, url] of candidates.entries()) {
 
   const result = spawnSync("npx", ["prisma", "migrate", "deploy"], {
     stdio: "inherit",
-    // Prisma reads DIRECT_URL through the schema's `directUrl`, so overriding
-    // that variable is what actually redirects the migration.
-    env: { ...process.env, DIRECT_URL: url },
+    /*
+     * Both, and that is not redundant.
+     *
+     * `directUrl` is what a migration actually connects through, so overriding
+     * `DIRECT_URL` is what redirects it. But Prisma validates the entire
+     * datasource block before it uses any of it, and `url` is
+     * `env("DATABASE_URL")` — so on a deployment where only the integration's
+     * `POSTGRES_*` variables exist, every candidate died with P1012
+     * "Environment variable not found: DATABASE_URL" before a single
+     * connection was attempted. The fallback chain was doing its job and being
+     * refused at the door.
+     *
+     * Setting both to the same candidate is safe: `migrate deploy` connects
+     * through `directUrl`, and `url` only has to be present and well-formed.
+     */
+    env: { ...process.env, DATABASE_URL: url, DIRECT_URL: url },
     shell: false,
   });
 
