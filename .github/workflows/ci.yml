@@ -42,6 +42,13 @@ jobs:
 
       - run: npm ci
       - run: npx prisma generate
+
+      - name: Migration manifest is current
+        # /api/health reads this list to say which migrations a database is
+        # missing. The build regenerates it, so a stale committed copy would be
+        # invisible until it silently under-reported in production.
+        run: node scripts/write-migration-manifest.mjs --check
+
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
