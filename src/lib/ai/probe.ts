@@ -1,7 +1,7 @@
 import "server-only";
 
 import { deflateSync } from "node:zlib";
-import { kimiConfigured, kimiModel } from "@/lib/ai/kimi";
+import { kimiConfigured, kimiModel, kimiKeySource, kimiBaseUrl, unreadKeyVariables } from "@/lib/ai/kimi";
 
 /**
  * Does the handwriting reader actually work?
@@ -37,9 +37,31 @@ export type ProbeFailure =
   | "TIMEOUT"
   | "NETWORK";
 
+/**
+ * What the deployment is actually using — enough to act on a refusal.
+ *
+ * `Incorrect API key provided` is returned for a revoked key, a typo, a key
+ * from another account, *and* a perfectly valid `.cn` key sent to the `.ai`
+ * endpoint. Four problems, one sentence. Without knowing which variable was
+ * read, which endpoint was called, and which key it was, the message cannot be
+ * acted on — which is how "the key still is not working" costs three rounds.
+ *
+ * Names and four characters only. Never a value.
+ */
+export interface ReaderContext {
+  model: string;
+  /** Which of KIMI_API_KEY / MOONSHOT_API_KEY the key was read from. */
+  keyVariable: string | null;
+  /** Last four characters, so a key can be recognised but not used. */
+  keyFingerprint: string | null;
+  baseUrl: string;
+  /** Set, key-shaped, and read by nothing. Almost always the whole bug. */
+  unreadVariables: string[];
+}
+
 export type ReaderProbe =
-  | { ok: true; model: string; readBack: string; ms: number }
-  | { ok: false; reason: ProbeFailure; detail: string; model: string; ms: number };
+  | ({ ok: true; readBack: string; ms: number } & ReaderContext)
+  | ({ ok: false; reason: ProbeFailure; detail: string; ms: number } & ReaderContext);
 
 /** What the generated test image says, and what the model must read back. */
 const PROBE_WORD = "NOTE OK";
@@ -152,15 +174,30 @@ const SCHEMA = {
 } as const;
 
 export async function probeHandwritingReader(): Promise<ReaderProbe> {
-  const model = kimiModel();
+  const { variable, fingerprint, key } = kimiKeySource();
+  const base = kimiBaseUrl();
+  const context: ReaderContext = {
+    model: kimiModel(),
+    keyVariable: variable,
+    keyFingerprint: fingerprint,
+    baseUrl: base,
+    unreadVariables: unreadKeyVariables(),
+  };
   const started = Date.now();
   const ms = () => Date.now() - started;
 
   if (!kimiConfigured()) {
-    return { ok: false, reason: "NO_KEY", detail: "KIMI_API_KEY is not set.", model, ms: ms() };
+    const unread = context.unreadVariables;
+    return {
+      ok: false,
+      reason: "NO_KEY",
+      detail: unread.length
+        ? `No key under KIMI_API_KEY or MOONSHOT_API_KEY. ${unread.join(", ")} ${unread.length === 1 ? "is" : "are"} set but read by nothing — rename to KIMI_API_KEY.`
+        : "Neither KIMI_API_KEY nor MOONSHOT_API_KEY is set.",
+      ...context,
+      ms: ms(),
+    };
   }
-
-  const base = process.env.KIMI_BASE_URL || "https://api.moonshot.ai/v1";
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45_000);
 
@@ -170,16 +207,16 @@ export async function probeHandwritingReader(): Promise<ReaderProbe> {
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.KIMI_API_KEY?.trim()}`,
+        Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model,
-        temperature: 0.1,
+        model: context.model,
+        // No temperature: K3 refuses any value but 1, which fails a good key.
         max_tokens: 512,
         reasoning_effort: process.env.KIMI_REASONING_EFFORT || "low",
         response_format: {
           type: "json_schema",
-          json_schema: { name: "handwriting_transcription", strict: true, schema: SCHEMA },
+          json_schema: { name: "handwriting_transcription", schema: SCHEMA },
         },
         messages: [
           {
@@ -210,7 +247,15 @@ export async function probeHandwritingReader(): Promise<ReaderProbe> {
             : res.status === 429
               ? "RATE_LIMITED"
               : "SERVER_ERROR";
-      return { ok: false, reason, detail: `HTTP ${res.status}. ${detail}`, model, ms: ms() };
+      return {
+        ok: false,
+        reason,
+        // The endpoint is named alongside the provider's words because
+        // "Incorrect API key provided" is also what a valid .cn key gets here.
+        detail: `HTTP ${res.status} from ${base}. ${detail}`,
+        ...context,
+        ms: ms(),
+      };
     }
 
     const payload = (await res.json()) as {
@@ -224,7 +269,7 @@ export async function probeHandwritingReader(): Promise<ReaderProbe> {
         reason: "EMPTY_CONTENT",
         detail:
           "The model answered 200 with no content. Usually the reasoning budget was spent before any output — raise max_tokens or lower KIMI_REASONING_EFFORT. The key is fine.",
-        model,
+        ...context,
         ms: ms(),
       };
     }
@@ -239,7 +284,7 @@ export async function probeHandwritingReader(): Promise<ReaderProbe> {
         ok: false,
         reason: "BAD_SHAPE",
         detail: `Reply was not the requested JSON: ${content.slice(0, 200)}`,
-        model,
+        ...context,
         ms: ms(),
       };
     }
@@ -252,12 +297,12 @@ export async function probeHandwritingReader(): Promise<ReaderProbe> {
         ok: false,
         reason: "UNREADABLE",
         detail: `Connected and answered, but did not read the test image. Expected "${PROBE_WORD}", got "${text.slice(0, 120)}". Vision may not be enabled for this model.`,
-        model,
+        ...context,
         ms: ms(),
       };
     }
 
-    return { ok: true, model, readBack: text.slice(0, 120), ms: ms() };
+    return { ok: true, readBack: text.slice(0, 120), ...context, ms: ms() };
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError";
     return {
@@ -266,7 +311,7 @@ export async function probeHandwritingReader(): Promise<ReaderProbe> {
       detail: aborted
         ? "No response within 45 seconds."
         : `Could not reach ${base}: ${error instanceof Error ? error.message : String(error)}`,
-      model,
+      ...context,
       ms: ms(),
     };
   } finally {

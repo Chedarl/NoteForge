@@ -35,6 +35,9 @@ export async function GET() {
       ? {
           working: true,
           model: probe.model,
+          keyVariable: probe.keyVariable,
+          keyEndsWith: probe.keyFingerprint,
+          endpoint: probe.baseUrl,
           testWord: PROBE_WORD,
           readBack: probe.readBack,
           milliseconds: probe.ms,
@@ -45,6 +48,13 @@ export async function GET() {
           reason: probe.reason,
           detail: probe.detail,
           model: probe.model,
+          // Which variable, which key, which endpoint. Names and four
+          // characters only — never a value — and all three are needed because
+          // the provider returns one sentence for four different problems.
+          keyVariable: probe.keyVariable,
+          keyEndsWith: probe.keyFingerprint,
+          endpoint: probe.baseUrl,
+          unreadVariables: probe.unreadVariables,
           testWord: PROBE_WORD,
           milliseconds: probe.ms,
           note: "Photograph upload still works — pages arrive with an empty transcript box to type into.",

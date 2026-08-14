@@ -53,8 +53,85 @@ const DEFAULT_MODEL = "kimi-k3";
 const DEFAULT_BASE = "https://api.moonshot.ai/v1";
 const DEFAULT_TIMEOUT_MS = 45_000;
 
+/**
+ * The only two names a key is read from. Anything else is invisible here.
+ *
+ * Both, because the same account's key gets saved under whichever name the
+ * thing that needed it used first — a GitHub workflow written against
+ * `MOONSHOT_API_KEY` and a client written against `KIMI_API_KEY` means a key
+ * correctly set in one place is silently absent in the other. Accepting both
+ * costs a line and removes a trap that cannot be seen from outside.
+ */
+export const KEY_VARIABLES = ["KIMI_API_KEY", "MOONSHOT_API_KEY"] as const;
+
+/** Settings that are meant to hold a name, so the warning below can ignore them. */
+const KNOWN_SETTINGS = new Set(["KIMI_MODEL", "KIMI_BASE_URL", "KIMI_REASONING_EFFORT"]);
+
+/**
+ * The key, which variable it came from, and its last four characters.
+ *
+ * `kimiConfigured()` only ever asked whether *a* key exists, never **which** —
+ * so a stale key under the right name, with the good one under a name nothing
+ * reads, reports itself as perfectly configured on every screen while every
+ * call comes back 401. Four characters is what Stripe and AWS show for the same
+ * reason: enough to recognise a key you are holding, useless to anyone else.
+ */
+export function kimiKeySource(): {
+  key: string | null;
+  variable: (typeof KEY_VARIABLES)[number] | null;
+  fingerprint: string | null;
+} {
+  for (const variable of KEY_VARIABLES) {
+    const raw = process.env[variable] || "";
+    /*
+     * First whitespace-delimited token only.
+     *
+     * A key pasted twice into a dashboard field makes an `Authorization` value
+     * containing a space, which is either rejected outright by `Headers` or
+     * sent and refused as 401 — indistinguishable from a revoked key, and a
+     * very easy mistake to make on a phone. Taking the first token turns it
+     * into a non-event.
+     */
+    const key = raw.trim().split(/\s+/)[0];
+    if (key) return { key, variable, fingerprint: key.slice(-4) };
+  }
+  return { key: null, variable: null, fingerprint: null };
+}
+
+/**
+ * Variables that look like a key but sit under a name nothing reads.
+ *
+ * **Names only, never values.** This is the sentence that ends the round on day
+ * one: "MOONSHOT_KEY is set, but this app reads only KIMI_API_KEY or
+ * MOONSHOT_API_KEY." A variable nobody reads is otherwise completely silent —
+ * it looks, from every screen and every log, exactly like not having set one.
+ */
+export function unreadKeyVariables(): string[] {
+  return Object.keys(process.env)
+    .filter(
+      (name) =>
+        /kimi|moonshot/i.test(name) &&
+        !KNOWN_SETTINGS.has(name) &&
+        !(KEY_VARIABLES as readonly string[]).includes(name) &&
+        (process.env[name] ?? "").trim().length > 0
+    )
+    .sort();
+}
+
+/**
+ * Which endpoint is being called, and this is not decoration.
+ *
+ * Moonshot runs two: `api.moonshot.ai` (international) and `api.moonshot.cn`
+ * (China). A key issued on one is refused by the other with the *same* message
+ * a revoked key gets. Four different problems, one sentence — so the endpoint
+ * has to be reported next to the key or the message cannot be acted on.
+ */
+export function kimiBaseUrl(): string {
+  return (process.env.KIMI_BASE_URL || DEFAULT_BASE).replace(/\/+$/, "");
+}
+
 export function kimiConfigured(): boolean {
-  return Boolean(process.env.KIMI_API_KEY?.trim());
+  return Boolean(kimiKeySource().key);
 }
 
 export function kimiModel(): string {
@@ -87,15 +164,10 @@ export interface KimiRequest {
  * fail differently.
  */
 export async function kimiJson<T = unknown>(request: KimiRequest): Promise<T | null> {
-  /*
-   * Trimmed, because pasting a key into a dashboard field is how it gets a
-   * trailing newline, and a header value with one produces a 401 that looks
-   * exactly like a revoked key. Cheap insurance against an afternoon.
-   */
-  const apiKey = process.env.KIMI_API_KEY?.trim();
+  const apiKey = kimiKeySource().key;
   if (!apiKey) return null;
 
-  const base = process.env.KIMI_BASE_URL || DEFAULT_BASE;
+  const base = kimiBaseUrl();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
@@ -114,12 +186,24 @@ export async function kimiJson<T = unknown>(request: KimiRequest): Promise<T | n
       },
       body: JSON.stringify({
         model: kimiModel(),
-        temperature: 0.1,
+        /*
+         * No `temperature`. K3 accepts only the value 1 and refuses any other
+         * outright, so sending 0.1 — a perfectly ordinary choice for extraction
+         * — made every call fail on a working key. Omitting it takes the
+         * default, which is what we wanted anyway.
+         */
         max_tokens: request.maxTokens ?? 2048,
         reasoning_effort: process.env.KIMI_REASONING_EFFORT || "low",
         response_format: {
           type: "json_schema",
-          json_schema: { name: request.schemaName, strict: true, schema: request.schema },
+          /*
+           * Not `strict: true`. Strict mode requires every property to appear
+           * in `required` with `additionalProperties: false` throughout, so a
+           * single optional field anywhere becomes a provider-side 400 that
+           * presents as "the feature silently does nothing". The answer is
+           * validated on arrival regardless, which buys the same safety.
+           */
+          json_schema: { name: request.schemaName, schema: request.schema },
         },
         messages: [
           { role: "system", content: request.system },
