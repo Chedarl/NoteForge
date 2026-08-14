@@ -85,15 +85,76 @@ function distinct(urls) {
   return urls.filter((url) => url && !seen.has(url) && seen.add(url));
 }
 
+/*
+ * The Supabase↔Vercel integration writes its own variable names rather than the
+ * two this project asks for, and the two sets are managed independently: an
+ * integration reconnect can leave `POSTGRES_*` populated while `DATABASE_URL`
+ * is absent. `POSTGRES_URL_NON_POOLING` is the direct (IPv6) host and so is
+ * listed last among these — it is included because on a project with the IPv4
+ * add-on it is exactly right, and skipped quickly when it is not.
+ */
+/**
+ * The names — never the values — of the database variables this process can see.
+ *
+ * Printed on every run, not only on failure, because the failure mode this
+ * exists for is silent by construction: the script skips, the build succeeds,
+ * and the schema stays behind. Knowing that a build could see
+ * `POSTGRES_PRISMA_URL` but not `DATABASE_URL` is the difference between a
+ * two-minute fix and another afternoon; the earlier version printed this only
+ * when it found nothing at all, which meant the one build that could have
+ * answered the question stayed quiet.
+ *
+ * A connection string carries the database password and a Vercel build log is
+ * readable by everyone on the team, so this must never print a value.
+ */
+function visibleDatabaseVariables() {
+  return Object.keys(process.env)
+    .filter((name) => /^(DATABASE|DIRECT|POSTGRES|PG)[A-Z_]*$/.test(name))
+    .sort();
+}
+
+const visible = visibleDatabaseVariables();
+console.log(
+  visible.length > 0
+    ? `[migrate] Database variables visible to this build: ${visible.join(", ")}`
+    : "[migrate] No database variables are visible to this build at all."
+);
+
 const candidates = distinct([
   process.env.DIRECT_URL,
   sessionPoolerVariant(process.env.DIRECT_URL),
   sessionPoolerVariant(process.env.DATABASE_URL),
   process.env.DATABASE_URL,
+  sessionPoolerVariant(process.env.POSTGRES_PRISMA_URL),
+  sessionPoolerVariant(process.env.POSTGRES_URL),
+  process.env.POSTGRES_URL_NON_POOLING,
+  process.env.POSTGRES_PRISMA_URL,
+  process.env.POSTGRES_URL,
 ]);
 
 if (candidates.length === 0) {
-  console.log("[migrate] No DIRECT_URL or DATABASE_URL set — skipping migrations.");
+  /*
+   * Say which database variables the build can actually see.
+   *
+   * "No DIRECT_URL or DATABASE_URL set" is true and nearly useless, because the
+   * interesting question is what *is* there — a build with only `POSTGRES_URL`
+   * and a build with nothing at all print the same line, and they need
+   * completely different fixes. This happened: a production build reported that
+   * message, and from the outside there was no way to tell whether the
+   * variables had been deleted, scoped to the wrong environment, or renamed by
+   * the integration.
+   *
+   * Names only, never values. A connection string carries the database
+   * password, and a Vercel build log is readable by everyone on the team.
+   */
+  console.log("[migrate] No usable database connection string — skipping migrations.");
+  console.log(
+    "[migrate] Set DATABASE_URL for this environment in the platform's settings."
+  );
+  console.log(
+    "[migrate] DIRECT_URL is optional — the session pooler is derived from"
+  );
+  console.log("[migrate] DATABASE_URL when it points at a Supabase pooler.");
   process.exit(0);
 }
 
