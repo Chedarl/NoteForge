@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { buildSubmissionPdf, buildBatchPdf } from "@/lib/export/submissionPdf";
-import { normalizeWhatsAppNumber } from "@/lib/sharing/phone";
+import { toE164, PHONE_PROBLEM_MESSAGE } from "@/lib/sharing/phone";
 import { storeSharedPdf, whatsappHandoff } from "@/lib/sharing/store";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { siteUrl } from "@/lib/email/send";
@@ -54,11 +54,14 @@ export async function createWhatsAppShare(
   if (!submission) return { error: "That submission is not available to share." };
 
   const rawPhone = String(formData.get("phone") ?? "");
-  const phone = rawPhone.trim()
-    ? normalizeWhatsAppNumber(rawPhone)
-    : submission.practice.noteWriterWhatsApp;
-  if (rawPhone.trim() && !phone) {
-    return { error: "Enter a WhatsApp number with its country code, or leave it blank." };
+  const callingCode = String(formData.get("callingCode") ?? "");
+  let phone: string | null = null;
+  if (rawPhone.trim()) {
+    const parsed = toE164(rawPhone, callingCode);
+    // Refuse rather than send somewhere wrong. A mangled number opens WhatsApp
+    // on nobody and reports success, which is the failure this replaces.
+    if (!parsed.ok) return { error: PHONE_PROBLEM_MESSAGE[parsed.problem] };
+    phone = parsed.e164;
   }
 
   /*
@@ -178,9 +181,12 @@ export async function createRoundWhatsAppShare(
   if (submissions.length === 0) return { error: "Those updates are not available to share." };
 
   const rawPhone = String(formData.get("phone") ?? "").trim();
-  const phone = rawPhone ? normalizeWhatsAppNumber(rawPhone) : null;
-  if (rawPhone && !phone) {
-    return { error: "Enter a WhatsApp number with its country code, or leave it blank." };
+  const callingCode = String(formData.get("callingCode") ?? "");
+  let phone: string | null = null;
+  if (rawPhone) {
+    const parsed = toE164(rawPhone, callingCode);
+    if (!parsed.ok) return { error: PHONE_PROBLEM_MESSAGE[parsed.problem] };
+    phone = parsed.e164;
   }
 
   let bytes: Uint8Array;
