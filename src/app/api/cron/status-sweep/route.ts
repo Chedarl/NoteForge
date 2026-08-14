@@ -81,6 +81,11 @@ export async function GET(request: Request) {
         const token = await signConfirmToken(confirmation.id);
         const link = `${siteUrl()}/confirm/${token}`;
 
+        // A FIELD_AGENT has no mailbox, so this can now be null. Skipping is
+        // right: the sweep asks a clinician to confirm a status, and somebody
+        // who cannot receive the question cannot answer it.
+        if (!therapist.email) continue;
+
         await sendMail({
           to: therapist.email,
           subject: `NoteForge — is ${client.clientCode} still in treatment?`,

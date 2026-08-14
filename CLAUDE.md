@@ -77,7 +77,40 @@ src/lib/insights/          metrics as live Prisma aggregates
 src/app/t/                 clinician portal (mobile-first)
 src/app/s/                 internal workspace: queue, verify, note, download, insights, audit
 src/app/confirm/           the one unauthenticated page — signed single-purpose links
+src/app/f/[token]/         the field worker's whole product — token is the credential
+src/lib/field/links.ts     minting, resolving and revoking a worker's way in
+src/lib/voice/speech.ts    dictation on the worker's own phone, no key, no account
 ```
+
+## Field agents submit without an account, and that is a schema decision
+
+A recovery coach standing outside somebody's house will not type a password. So
+a `FIELD_AGENT` is a `User` with a **null `authUserId`** and a null `email`,
+reached through a durable `FieldLink` whose token is the credential.
+
+Making them a `User` rather than a parallel entity is the load-bearing choice.
+`submitEncounter` takes a `submittedBy: User`, and every guarantee in this
+product hangs off that — the status guardrail, refuse-but-record, duplicate
+detection, the audit trail, attribution on the PDF. A separate `FieldAgent`
+table would have meant reimplementing all of it, and the reimplementation is
+where a guardrail quietly stops applying.
+
+The null `authUserId` **is** the access control, and it fails closed by
+construction: signing in matches a Supabase id against that column, and no real
+id equals null. Nobody has to remember to write a check.
+
+`FieldLink` is not `ShareLink` and the difference is the point. A share link
+points *out* at one document and expires in hours. A field link points *in*,
+belongs to one named person, and is saved to a home screen and used daily — so
+it does not expire, and the control that matters is per-person revocation. Both
+store only a SHA-256 of the token.
+
+Verified against a real database: a valid token resolves, a wrong or malformed
+one returns null, a revoked link stops working while every other agent's keeps
+working, a suspended agent's link stops, a cross-practice revoke is refused, and
+two agents with null `authUserId` coexist. And the guardrail refuses a
+discharged client through this door exactly as it does through `/t/write` —
+`["QUEUED", "BLOCKED"]` with a flag raised.
 
 ## Conventions
 

@@ -18,6 +18,7 @@ import type { Discipline, TemplateKind } from "@prisma/client";
  */
 
 export const DISCIPLINE_LABEL: Record<Discipline, string> = {
+  RECOVERY_COACH: "Recovery Coach",
   SOCIAL_CASE_WORKER: "Social Case Worker",
   NURSE_PRACTITIONER: "Nurse Practitioner",
   THERAPIST: "Therapist",
@@ -26,6 +27,8 @@ export const DISCIPLINE_LABEL: Record<Discipline, string> = {
 };
 
 export const DISCIPLINE_HINT: Record<Discipline, string> = {
+  RECOVERY_COACH:
+    "Contact in the field — how the person presented, what was needed, what was done, and anything that has changed.",
   SOCIAL_CASE_WORKER:
     "Case management and psychosocial support — needs, actions taken, referrals, benefits and housing.",
   NURSE_PRACTITIONER:
@@ -36,6 +39,7 @@ export const DISCIPLINE_HINT: Record<Discipline, string> = {
 };
 
 export const DISCIPLINE_OPTIONS: Discipline[] = [
+  "RECOVERY_COACH",
   "SOCIAL_CASE_WORKER",
   "NURSE_PRACTITIONER",
   "THERAPIST",
@@ -52,6 +56,10 @@ export const DISCIPLINE_OPTIONS: Discipline[] = [
  * where clinical judgement belongs.
  */
 export const TEMPLATES_FOR_DISCIPLINE: Record<Discipline, TemplateKind[]> = {
+  // A field contact is written as prose, not as a structured assessment. A
+  // coach standing outside somebody's house is recording what happened, and
+  // asking them to pick a template first is how the update never gets filed.
+  RECOVERY_COACH: ["NARRATIVE", "CASE_MANAGEMENT"],
   SOCIAL_CASE_WORKER: ["CASE_MANAGEMENT", "NARRATIVE", "SOAP", "DAP"],
   NURSE_PRACTITIONER: ["NURSING", "SOAP", "NARRATIVE", "DAP"],
   THERAPIST: ["SOAP", "DAP", "BIRP", "NARRATIVE"],

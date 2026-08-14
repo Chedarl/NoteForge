@@ -2,6 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { Card, Pill } from "@/components/shared/ui";
 import {
+  AddFieldAgentForm,
+  WithdrawLinkForm,
+  FieldLinkHint,
+} from "@/components/specialist/FieldAgentForms";
+import { listFieldAgents } from "@/lib/field/manage";
+import {
   InviteUserForm,
   UserStatusForm,
   WhatsAppSettingsForm,
@@ -19,9 +25,17 @@ export default async function SettingsPage() {
   const owner = await requireRole(["OWNER"]);
 
   const users = await prisma.user.findMany({
-    where: { practiceId: owner.practiceId },
+    where: {
+      practiceId: owner.practiceId,
+      // Field agents are listed in their own section with their links; showing
+      // them here too would invite somebody to "suspend" one and wonder why no
+      // password reset arrives for an account that never existed.
+      role: { not: "FIELD_AGENT" },
+    },
     orderBy: [{ role: "asc" }, { fullName: "asc" }],
   });
+
+  const fieldLinks = await listFieldAgents(owner.practiceId);
 
   /*
    * `findUniqueOrThrow` selects every column on Practice, including
@@ -85,6 +99,46 @@ export default async function SettingsPage() {
           <InviteUserForm />
         </Card>
       </div>
+
+      <section>
+        <div className="mb-3">
+          <h2 className="font-semibold">Field workers</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Recovery coaches and case workers who send updates from a link instead of signing in.
+          </p>
+          <FieldLinkHint />
+        </div>
+        <Card className="p-5">
+          <AddFieldAgentForm />
+          {fieldLinks.length > 0 ? (
+            <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100 pt-1">
+              {fieldLinks.map((link) => (
+                <div key={link.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+                  <span className="font-medium text-slate-900">{link.agent.fullName}</span>
+                  <span className="text-sm text-slate-500">
+                    {link.agent.discipline ? DISCIPLINE_LABEL[link.agent.discipline] : "Field worker"}
+                  </span>
+                  {link.revokedAt ? (
+                    <Pill tone="rose">Withdrawn</Pill>
+                  ) : (
+                    <Pill tone="emerald">Active</Pill>
+                  )}
+                  <span className="text-xs text-slate-500">
+                    {link.useCount === 0
+                      ? "not used yet"
+                      : `${link.useCount} update${link.useCount === 1 ? "" : "s"}`}
+                  </span>
+                  <span className="ml-auto">
+                    {link.revokedAt ? null : (
+                      <WithdrawLinkForm linkId={link.id} name={link.agent.fullName} />
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </Card>
+      </section>
 
       <section>
         <div className="mb-3 flex items-end justify-between gap-3">

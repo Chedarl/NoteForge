@@ -103,10 +103,13 @@ async function notifyStatusChange(
     },
     select: { email: true },
   });
-  if (recipients.length === 0) return;
+  // Field agents have no email address; they are told nothing by mail and that
+  // is correct — they submit through a link and see only the form.
+  const addresses = recipients.map((r) => r.email).filter((e): e is string => Boolean(e));
+  if (addresses.length === 0) return;
 
   await sendMail({
-    to: recipients.map((r) => r.email),
+    to: addresses,
     subject: `NoteForge — ${client.clientCode} is now ${STATUS_LABEL[client.status]}`,
     text: [
       `Client ${client.clientCode} changed from ${STATUS_LABEL[fromStatus]} to ${STATUS_LABEL[client.status]}.`,
