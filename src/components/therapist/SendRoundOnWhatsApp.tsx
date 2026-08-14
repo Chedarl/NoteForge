@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect } from "react";
 import { createRoundWhatsAppShare, type ShareState } from "@/lib/sharing/actions";
+import CallingCodeField from "@/components/shared/CallingCodeField";
 
 /**
  * The WhatsApp button that works without Meta's Cloud API.
@@ -43,19 +44,7 @@ export default function SendRoundOnWhatsApp({
     <form action={action} className="mt-4 space-y-3 border-t border-[color:var(--nf-border)] pt-4">
       <input type="hidden" name="submissionIds" value={submissionIds.join(",")} />
 
-      <div>
-        <label htmlFor="sharePhone" className="nf-label">
-          Send to
-        </label>
-        <input
-          id="sharePhone"
-          name="phone"
-          type="tel"
-          defaultValue={defaultPhone}
-          placeholder="Leave blank to pick the contact in WhatsApp"
-          className="nf-field"
-        />
-      </div>
+      <CallingCodeField defaultPhone={defaultPhone} label="Send to" />
 
       <label className="flex cursor-pointer items-start gap-2.5 text-sm text-slate-700">
         <input

@@ -3,6 +3,7 @@
 import { useActionState, useEffect } from "react";
 import { ExternalLink, FileText, MessageCircle } from "lucide-react";
 import { createWhatsAppShare, type ShareState } from "@/lib/sharing/actions";
+import CallingCodeField from "@/components/shared/CallingCodeField";
 
 export default function ShareOnWhatsApp({
   submissionId,
@@ -34,16 +35,10 @@ export default function ShareOnWhatsApp({
 
       <form action={action} className="mt-4 space-y-3">
         <input type="hidden" name="submissionId" value={submissionId} />
-        <label className="block text-xs font-medium text-slate-700">
-          Recipient&apos;s WhatsApp number <span className="font-normal text-slate-500">(optional)</span>
-          <input
-            name="phone"
-            type="tel"
-            defaultValue={defaultPhone}
-            placeholder="Choose the recipient in WhatsApp"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-          />
-        </label>
+        <CallingCodeField
+          defaultPhone={defaultPhone}
+          label="Recipient&rsquo;s WhatsApp number"
+        />
         <label className="flex items-start gap-2 text-xs leading-relaxed text-slate-600">
           <input name="acknowledged" value="yes" type="checkbox" required className="mt-0.5" />
           I understand that anyone holding this link can download the sensitive PDF until it

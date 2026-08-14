@@ -54,7 +54,7 @@ const DEFAULT_BASE = "https://api.moonshot.ai/v1";
 const DEFAULT_TIMEOUT_MS = 45_000;
 
 export function kimiConfigured(): boolean {
-  return Boolean(process.env.KIMI_API_KEY);
+  return Boolean(process.env.KIMI_API_KEY?.trim());
 }
 
 export function kimiModel(): string {
@@ -87,7 +87,12 @@ export interface KimiRequest {
  * fail differently.
  */
 export async function kimiJson<T = unknown>(request: KimiRequest): Promise<T | null> {
-  const apiKey = process.env.KIMI_API_KEY;
+  /*
+   * Trimmed, because pasting a key into a dashboard field is how it gets a
+   * trailing newline, and a header value with one produces a 401 that looks
+   * exactly like a revoked key. Cheap insurance against an afternoon.
+   */
+  const apiKey = process.env.KIMI_API_KEY?.trim();
   if (!apiKey) return null;
 
   const base = process.env.KIMI_BASE_URL || DEFAULT_BASE;

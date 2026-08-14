@@ -170,7 +170,7 @@ export async function probeHandwritingReader(): Promise<ReaderProbe> {
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.KIMI_API_KEY}`,
+        Authorization: `Bearer ${process.env.KIMI_API_KEY?.trim()}`,
       },
       body: JSON.stringify({
         model,
