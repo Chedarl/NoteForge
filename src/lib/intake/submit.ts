@@ -203,10 +203,15 @@ async function notifyBlocked(
     where: { practiceId, status: "ACTIVE", role: { in: ["OWNER", "SPECIALIST"] } },
     select: { email: true },
   });
-  if (staff.length === 0) return;
+  // Only OWNER and SPECIALIST are selected above and both always have an
+  // address, but the column is nullable since field agents arrived — so this
+  // filters rather than asserting, and a practice with no reachable staff
+  // simply sends nothing instead of throwing inside a refusal path.
+  const addresses = staff.map((s) => s.email).filter((e): e is string => Boolean(e));
+  if (addresses.length === 0) return;
 
   await sendMail({
-    to: staff.map((s) => s.email),
+    to: addresses,
     subject: `NoteForge — submission refused for ${clientCode} (${STATUS_LABEL[status as keyof typeof STATUS_LABEL] ?? status})`,
     text: [
       `${therapist.fullName} tried to file a note for client ${clientCode}, which is marked ${status}.`,

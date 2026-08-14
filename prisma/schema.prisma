@@ -69,6 +69,7 @@ model Practice {
   auditLogs           AuditLog[]
   statusConfirmations StatusConfirmation[]
   shareLinks          ShareLink[]
+  fieldLinks          FieldLink[]
 }
 
 enum UserRole {
@@ -78,6 +79,13 @@ enum UserRole {
   SPECIALIST
   /// The clinician. Submits encounters, sees only their own clients.
   THERAPIST
+  /// A recovery coach or case worker in the field. Submits through a durable
+  /// link, never signs in, and sees nothing except the form they were sent.
+  /// Deliberately a role rather than a separate table: every guarantee in this
+  /// product — the status guardrail, duplicate detection, the audit trail,
+  /// attribution on the PDF — is written against `submittedBy` being a User,
+  /// and a parallel entity would mean re-implementing all of it.
+  FIELD_AGENT
 }
 
 enum UserStatus {
@@ -99,6 +107,7 @@ enum UserStatus {
 /// information is *collected* in the first place. An export cannot contain a
 /// medication review that nobody was ever asked for.
 enum Discipline {
+  RECOVERY_COACH
   SOCIAL_CASE_WORKER
   NURSE_PRACTITIONER
   THERAPIST
@@ -112,8 +121,16 @@ model User {
   /// Supabase Auth user id. Authentication is Supabase's job; authorization is
   /// this row's job, re-read on every request so suspending an account takes
   /// effect immediately rather than at the next login.
-  authUserId      String     @unique
-  email           String     @unique
+  ///
+  /// Null for a FIELD_AGENT, who submits through a link and never signs in. A
+  /// null here is what makes them unable to log in at all: the session lookup
+  /// matches on a real Supabase id, which can never equal null. That is the
+  /// whole access control, and it fails closed.
+  authUserId      String?    @unique
+  /// Null for a FIELD_AGENT: a worker given a link has no account and no
+  /// mailbox here, and inventing a placeholder address would put a fiction in
+  /// the audit trail.
+  email           String?    @unique
   fullName        String
   role            UserRole
   status          UserStatus @default(ACTIVE)
@@ -145,6 +162,8 @@ model User {
   statusConfirmations StatusConfirmation[] @relation("ConfirmationTherapist")
   auditLogs           AuditLog[]
   createdShareLinks   ShareLink[]          @relation("ShareCreatedBy")
+  fieldLinks          FieldLink[]          @relation("FieldLinkAgent")
+  createdFieldLinks   FieldLink[]          @relation("FieldLinkCreatedBy")
 
   @@index([practiceId, role])
 }
@@ -405,6 +424,42 @@ model Submission {
 /// Only a SHA-256 hash of the bearer token is stored, so a database read cannot
 /// be turned into a working download link. The PDF itself remains in the private
 /// note-exports bucket and can only be retrieved through the token route.
+/// A durable way in for somebody who will never have an account.
+///
+/// Separate from `ShareLink`, which points *out* at one document and expires in
+/// hours. This points *in*, belongs to one named person, and is meant to be
+/// saved to a home screen and used every day — so it does not expire, and the
+/// control that matters is revocation rather than a clock.
+///
+/// Rows are kept after revocation. A link is how work entered the practice, and
+/// deleting the row would orphan the reason a submission exists.
+model FieldLink {
+  id String @id @default(cuid())
+
+  /// Only ever the hash. A stolen database backup must not yield working links.
+  tokenHash String @unique
+
+  practiceId String
+  practice   Practice @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+
+  /// The FIELD_AGENT this link speaks for. Every submission through it is
+  /// attributed to them by name, on screen and on the PDF.
+  agentId String
+  agent   User   @relation("FieldLinkAgent", fields: [agentId], references: [id], onDelete: Cascade)
+
+  createdById String?
+  createdBy   User?   @relation("FieldLinkCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  useCount   Int       @default(0)
+
+  @@index([practiceId, revokedAt])
+  @@index([agentId])
+  @@index([createdById])
+}
+
 model ShareLink {
   id String @id @default(cuid())
 

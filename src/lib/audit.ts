@@ -36,6 +36,9 @@ export type AuditEntityType =
   | "user"
   | "practice"
   | "share"
+  /// A field worker's way in. Distinct from "share", which points outward at
+  /// one document — this points inward and is a standing credential.
+  | "fieldLink"
   | "insights"
   | "confirmation";
 
