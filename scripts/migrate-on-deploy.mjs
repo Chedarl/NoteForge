@@ -93,6 +93,33 @@ function distinct(urls) {
  * listed last among these — it is included because on a project with the IPv4
  * add-on it is exactly right, and skipped quickly when it is not.
  */
+/**
+ * The names — never the values — of the database variables this process can see.
+ *
+ * Printed on every run, not only on failure, because the failure mode this
+ * exists for is silent by construction: the script skips, the build succeeds,
+ * and the schema stays behind. Knowing that a build could see
+ * `POSTGRES_PRISMA_URL` but not `DATABASE_URL` is the difference between a
+ * two-minute fix and another afternoon; the earlier version printed this only
+ * when it found nothing at all, which meant the one build that could have
+ * answered the question stayed quiet.
+ *
+ * A connection string carries the database password and a Vercel build log is
+ * readable by everyone on the team, so this must never print a value.
+ */
+function visibleDatabaseVariables() {
+  return Object.keys(process.env)
+    .filter((name) => /^(DATABASE|DIRECT|POSTGRES|PG)[A-Z_]*$/.test(name))
+    .sort();
+}
+
+const visible = visibleDatabaseVariables();
+console.log(
+  visible.length > 0
+    ? `[migrate] Database variables visible to this build: ${visible.join(", ")}`
+    : "[migrate] No database variables are visible to this build at all."
+);
+
 const candidates = distinct([
   process.env.DIRECT_URL,
   sessionPoolerVariant(process.env.DIRECT_URL),
@@ -120,16 +147,7 @@ if (candidates.length === 0) {
    * Names only, never values. A connection string carries the database
    * password, and a Vercel build log is readable by everyone on the team.
    */
-  const visible = Object.keys(process.env)
-    .filter((name) => /^(DATABASE|DIRECT|POSTGRES|PG)[A-Z_]*$/.test(name))
-    .sort();
-
   console.log("[migrate] No usable database connection string — skipping migrations.");
-  console.log(
-    visible.length > 0
-      ? `[migrate] Database variables visible to this build: ${visible.join(", ")}`
-      : "[migrate] No database variables are visible to this build at all."
-  );
   console.log(
     "[migrate] Set DATABASE_URL for this environment in the platform's settings."
   );

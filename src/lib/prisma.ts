@@ -43,10 +43,35 @@ function poolSafeUrl(raw: string | undefined): string | undefined {
   return url.toString();
 }
 
+/**
+ * Finds a connection string, accepting the names the Supabase↔Vercel
+ * integration writes as well as the one this project asks for.
+ *
+ * `DATABASE_URL` is what `schema.prisma` names and what everything here
+ * documents, so it wins whenever it is set. But the integration writes
+ * `POSTGRES_PRISMA_URL` and `POSTGRES_URL` instead, and the two sets are
+ * managed independently — reconnecting the integration can leave the
+ * `POSTGRES_*` variables populated while `DATABASE_URL` is absent, at which
+ * point Prisma has no datasource and *every* page fails with a connection
+ * error rather than anything that names the cause.
+ *
+ * `POSTGRES_PRISMA_URL` is preferred over `POSTGRES_URL` because it is the
+ * pooled one the integration intends for exactly this use. Both still go
+ * through `poolSafeUrl`, so the pgbouncer flag is applied to whichever is used.
+ */
+function resolveDatabaseUrl(): string | undefined {
+  return (
+    process.env.DATABASE_URL ??
+    process.env.POSTGRES_PRISMA_URL ??
+    process.env.POSTGRES_URL ??
+    undefined
+  );
+}
+
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function createClient() {
-  const url = poolSafeUrl(process.env.DATABASE_URL);
+  const url = poolSafeUrl(resolveDatabaseUrl());
   // Passing no override at all keeps Prisma's own env handling, which matters
   // for tooling that constructs a client without DATABASE_URL in scope.
   return url ? new PrismaClient({ datasources: { db: { url } } }) : new PrismaClient();
