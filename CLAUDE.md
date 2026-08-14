@@ -273,6 +273,29 @@ npx prisma migrate diff --from-migrations prisma/migrations \
   --shadow-database-url "postgresql://postgres@localhost:5433/shadow?schema=public&host=/tmp" --script
 ```
 
+### Is the handwriting reader actually working?
+
+`readHandwriting` cannot tell you, on purpose: absent key, rejected key,
+withdrawn model, empty completion and timeout all return `null` so the workspace
+degrades to typing rather than to an error page. That is right for a clinician
+mid-session and useless for deciding whether to promise the feature to a
+customer.
+
+`/api/health/ocr` makes a real call with a generated image reading "NOTE OK" and
+reports which of those it is — `NO_KEY`, `UNAUTHORIZED`, `MODEL_UNAVAILABLE`,
+`RATE_LIMITED`, `EMPTY_CONTENT`, `BAD_SHAPE`, `UNREADABLE`, `TIMEOUT`,
+`NETWORK`. It is authenticated, unlike `/api/health`, because it spends money on
+a metered API and a public URL would let anyone run up the bill.
+
+`EMPTY_CONTENT` is the one worth knowing about. K3 reasons before it writes, so
+a tight token budget is spent thinking and returns a 200 with nothing in it,
+still billed. It reads exactly like a dead key. Raise `max_tokens` or lower
+`KIMI_REASONING_EFFORT`.
+
+The test image is generated rather than committed — a 5x7 bitmap scaled up and
+encoded as greyscale PNG in `src/lib/ai/probe.ts`. A checked-in binary would
+work and would also be unreviewable.
+
 ## Verify before claiming done
 
 `npm run lint`, `npm run typecheck`, `npm run build` — all three, all clean. Then actually
