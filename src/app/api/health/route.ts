@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { whatsappConfigured } from "@/lib/whatsapp/send";
+import { siteUrlConfigured } from "@/lib/email/send";
 import { fieldCryptoConfigured } from "@/lib/crypto/field";
 import { EXPECTED_MIGRATIONS } from "@/lib/db/migrations.generated";
 import { readerConfigured } from "@/lib/ai/reader";
@@ -171,6 +172,14 @@ export async function GET() {
      * it is authenticated because it costs money to run. This boolean is the
      * cheap half, and is the one that explains an empty transcript box.
      */
+    /*
+     * Not optional, and it looks harmless. Every link that leaves this
+     * deployment is built from one base URL, so when it falls back to localhost
+     * the app keeps working perfectly and every share link, invitation and
+     * confirmation any recipient receives is dead. Nothing inside the product
+     * can see that; only the person on the other end can.
+     */
+    outboundLinks: siteUrlConfigured(),
     handwritingReading: readerConfigured(),
     whatsappDelivery: whatsappConfigured(),
     email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
