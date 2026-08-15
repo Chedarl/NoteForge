@@ -28,7 +28,7 @@ export function Nav({
   items,
   right,
 }: {
-  items: { href: string; label: string }[];
+  items: { href: string; label: string; badge?: number }[];
   right?: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -66,6 +66,17 @@ export function Nav({
                 )}
               >
                 {item.label}
+                {/* A count only when there is something to count. A grey "0"
+                    beside every nav item trains people to stop reading it, and
+                    then the one that matters goes unnoticed too. */}
+                {item.badge ? (
+                  <span
+                    className="ml-1.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-rose-600 px-1 py-px text-[0.65rem] font-bold text-white tabular-nums"
+                    aria-label={`${item.badge} waiting`}
+                  >
+                    {item.badge > 99 ? "99+" : item.badge}
+                  </span>
+                ) : null}
               </Link>
             );
           })}

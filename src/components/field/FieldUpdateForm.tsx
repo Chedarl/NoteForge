@@ -18,7 +18,22 @@ import { speechSupported, startDictation, type Dictation } from "@/lib/voice/spe
  * changes the name and keeps going, and re-typing the date each time is the
  * kind of friction that ends with updates not being filed at all.
  */
-export default function FieldUpdateForm({ token, agentName }: { token: string; agentName: string }) {
+export default function FieldUpdateForm({
+  token,
+  agentName,
+  supervisorName,
+}: {
+  token: string;
+  agentName: string;
+  /**
+   * The clinician who gave out this link, when there is one. Named on the page
+   * rather than left implicit: a worker writing for "the office" writes
+   * differently from one writing for the nurse who knows the client, and one
+   * who does not know an update gets read before it becomes a note cannot judge
+   * how much to explain.
+   */
+  supervisorName: string | null;
+}) {
   const [state, action, pending] = useActionState<FieldUpdateState, FormData>(
     submitFieldUpdate,
     {}
@@ -154,8 +169,11 @@ export default function FieldUpdateForm({ token, agentName }: { token: string; a
         <div className="flex gap-2.5 rounded-lg bg-teal-50 px-3 py-2.5 text-sm text-teal-900">
           <Check size={17} className="mt-0.5 shrink-0" />
           <span>
-            Filed for <strong>{state.success.clientCode}</strong>, {state.success.when}. Change the
-            name above to send another.
+            Filed for <strong>{state.success.clientCode}</strong>, {state.success.when}.{" "}
+            {state.success.awaitingReview && supervisorName
+              ? `${supervisorName} will read it before it goes for writing up.`
+              : "It has gone to the office."}{" "}
+            Change the name above to send another.
           </span>
         </div>
       ) : null}
@@ -165,7 +183,10 @@ export default function FieldUpdateForm({ token, agentName }: { token: string; a
       </button>
 
       <p className="text-center text-xs text-slate-500">
-        Sent as {agentName}. The office sees it straight away.
+        Sent as {agentName}.{" "}
+        {supervisorName
+          ? `${supervisorName} reads everything you send here first.`
+          : "The office sees it straight away."}
       </p>
     </form>
   );

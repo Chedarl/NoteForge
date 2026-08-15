@@ -40,6 +40,15 @@ export interface SubmitInput {
    * reader stopped assuming a string, which is what `renderFieldValue` is for.
    */
   fields: Record<string, unknown>;
+  /**
+   * The clinician who must read this before it reaches documentation.
+   *
+   * Set only for a submission arriving through a field link. A recovery coach's
+   * account of a doorstep visit is not a clinical record until somebody
+   * clinical has read it, and this is what holds it short of the queue until
+   * they have. Absent for everything else, which is unchanged.
+   */
+  reviewBy?: { id: string } | null;
   /** Free text for a narrative or the notes accompanying a photo set. */
   extraText?: string;
   /**
@@ -51,7 +60,14 @@ export interface SubmitInput {
 }
 
 export type SubmitResult =
-  | { ok: true; submissionId: string; flagged: boolean; needsVerify: boolean }
+  | {
+      ok: true;
+      submissionId: string;
+      flagged: boolean;
+      needsVerify: boolean;
+      /** True when it is waiting for a supervising clinician rather than queued. */
+      awaitingReview: boolean;
+    }
   | { ok: false; reason: "not_found" }
   | {
       ok: false;
@@ -132,8 +148,26 @@ export async function submitEncounter(input: SubmitInput): Promise<SubmitResult>
   // straight to the queue.
   const needsVerify = input.kind === "PHOTO";
 
+  /*
+   * Three destinations, in order of precedence.
+   *
+   * A photo has no text yet, so it goes to verification whoever sent it — a
+   * supervising nurse reviewing an empty transcript would be reviewing nothing.
+   * Otherwise a supervised submission waits for its clinician, and everything
+   * else goes straight to the documentation queue as before.
+   */
+  const state = needsVerify
+    ? "NEEDS_VERIFY"
+    : input.reviewBy
+      ? "AWAITING_REVIEW"
+      : "QUEUED";
+
   const submission = await prisma.submission.create({
-    data: { ...base, state: needsVerify ? "NEEDS_VERIFY" : "QUEUED" },
+    data: {
+      ...base,
+      state,
+      reviewerId: input.reviewBy?.id ?? null,
+    },
   });
 
   await prisma.client.update({
@@ -165,7 +199,13 @@ export async function submitEncounter(input: SubmitInput): Promise<SubmitResult>
     flagged = outcome.flags.length > 0;
   }
 
-  return { ok: true, submissionId: submission.id, flagged, needsVerify };
+  return {
+    ok: true,
+    submissionId: submission.id,
+    flagged,
+    needsVerify,
+    awaitingReview: state === "AWAITING_REVIEW",
+  };
 }
 
 /**

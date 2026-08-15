@@ -58,7 +58,11 @@ export default async function FieldPage({ params }: { params: Promise<{ token: s
         </p>
       </header>
 
-      <FieldUpdateForm token={token} agentName={agent.fullName} />
+      <FieldUpdateForm
+        token={token}
+        agentName={agent.fullName}
+        supervisorName={session.supervisorName}
+      />
 
       <section className="mt-8 border-t border-[color:var(--nf-border)] pt-5">
         <h2 className="text-xs font-semibold tracking-wide text-slate-700 uppercase">

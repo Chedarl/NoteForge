@@ -1,11 +1,16 @@
 import { requireRole } from "@/lib/auth/session";
 import { logout } from "@/lib/auth/actions";
+import { countPendingReviews } from "@/lib/field/reviewQueue";
 import { Nav } from "@/components/shared/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function TherapistLayout({ children }: { children: React.ReactNode }) {
   const user = await requireRole(["THERAPIST", "OWNER"]);
+  // Counted on every page of the portal on purpose. A field worker's update is
+  // sitting unread until this clinician reads it, and a queue you have to
+  // remember to visit is a queue that goes stale.
+  const waiting = await countPendingReviews(user.id, user.practiceId);
 
   return (
     <div className="min-h-screen">
@@ -18,6 +23,8 @@ export default async function TherapistLayout({ children }: { children: React.Re
           { href: "/t", label: "Clients" },
           { href: "/t/new", label: "Structured" },
           { href: "/t/upload", label: "Photos" },
+          { href: "/t/review", label: "Review", badge: waiting },
+          { href: "/t/team", label: "Field team" },
           { href: "/t/insights", label: "Insights" },
           { href: "/t/profile", label: "Profile" },
           // The way back to the internal side, for an owner who is both.

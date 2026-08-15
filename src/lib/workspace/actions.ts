@@ -169,6 +169,15 @@ export async function ensureNote(submissionId: string) {
   const user = await requireStaff();
   const submission = await loadSubmission(submissionId, user.practiceId);
   if (!submission) return null;
+  /*
+   * A field update that no clinician has read yet is not writable, even by URL.
+   *
+   * The queue no longer lists these, but "not linked to" is not a boundary — a
+   * pasted or bookmarked id would otherwise open the editor and, worse, flip the
+   * submission to IN_PROGRESS, taking it out of the nurse's queue without her
+   * ever seeing it. Returning null puts the caller on its not-found path.
+   */
+  if (submission.state === "AWAITING_REVIEW") return null;
   if (submission.note) return submission.note;
 
   const note = await prisma.note.create({

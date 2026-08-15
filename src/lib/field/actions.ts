@@ -20,7 +20,7 @@ import { writeAudit } from "@/lib/audit";
 export interface FieldUpdateState {
   error?: string;
   blocked?: string;
-  success?: { clientCode: string; when: string };
+  success?: { clientCode: string; when: string; awaitingReview: boolean };
 }
 
 export async function submitFieldUpdate(
@@ -56,10 +56,16 @@ export async function submitFieldUpdate(
   const resolved = await resolveClientByName({
     practiceId: session.practiceId,
     typedName: name,
-    // The agent becomes the client's clinician of record when the name is one
-    // nobody has filed before. That is accurate — they are the person who saw
-    // them — and the office can reassign it.
-    therapistId: session.agent.id,
+    /*
+     * The supervising clinician becomes clinician of record, not the worker.
+     *
+     * This used to be the agent, which was defensible and wrong in practice: a
+     * field agent cannot sign in, so a client assigned to them appeared on
+     * nobody's caseload and was swept by nothing. Assigning the nurse who
+     * handed out the link puts the client where a clinician will actually see
+     * them, and the worker is still recorded on every submission they file.
+     */
+    therapistId: session.supervisorId ?? session.agent.id,
   });
   if (!resolved.ok) return { error: resolved.error };
 
@@ -72,6 +78,9 @@ export async function submitFieldUpdate(
     discipline: session.agent.discipline ?? undefined,
     encounterDate,
     fields: { narrative: update },
+    // Holds it short of the documentation queue until the clinician who handed
+    // out this link has read it.
+    reviewBy: session.supervisorId ? { id: session.supervisorId } : null,
   });
 
   if (!result.ok) {
@@ -116,6 +125,7 @@ export async function submitFieldUpdate(
     success: {
       clientCode: resolved.client.clientCode,
       when: encounterDate.toISOString().slice(0, 10),
+      awaitingReview: result.awaitingReview,
     },
   };
 }

@@ -30,6 +30,7 @@ import type { SubmissionState, TemplateKind } from "@prisma/client";
 const STATE_LABEL: Record<SubmissionState, string> = {
   RECEIVED: "Received",
   NEEDS_VERIFY: "Awaiting human verification of the transcript",
+  AWAITING_REVIEW: "Awaiting review by the supervising clinician",
   QUEUED: "Queued for note production",
   IN_PROGRESS: "Note in production",
   DONE: "Note produced",
