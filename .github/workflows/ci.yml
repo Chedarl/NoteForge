@@ -51,6 +51,15 @@ jobs:
 
       - run: npm run lint
       - run: npm run typecheck
+
+      - name: Portal actions point somewhere that honours them
+        # A persona's primary action is a bare href, so nothing type-checks that
+        # the page at the other end exists, reads the query parameter it is
+        # handed, or offers the template it names. "Record a visit" once pointed
+        # at a page with no microphone on it and no searchParams at all, and
+        # lint, typecheck and build were all green. Needs no database.
+        run: npm run verify:portals
+
       - run: npm run build
 
       - name: Migrations apply with only the integration's variables
