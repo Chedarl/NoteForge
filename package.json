@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:sql": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
-    "verify:pdf": "node --import tsx scripts/verify-pdf.ts"
+    "verify:pdf": "node --import tsx scripts/verify-pdf.ts",
+    "verify:portals": "node --conditions=react-server --import tsx scripts/verify-portals.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

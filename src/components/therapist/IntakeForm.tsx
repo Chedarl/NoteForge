@@ -41,6 +41,7 @@ interface ClientOption {
 export default function IntakeForm({
   clients,
   preselectedClientId,
+  preselectedTemplate,
   allowedTemplates,
   discipline,
   defaultWhatsApp,
@@ -48,6 +49,16 @@ export default function IntakeForm({
 }: {
   clients: ClientOption[];
   preselectedClientId: string;
+  /**
+   * Which template to open on, from the dashboard's primary action — a nurse
+   * practitioner pressing "Start a clinical encounter" should land on the
+   * nursing form, not on whatever happens to be first.
+   *
+   * Validated by the caller against `allowedTemplates`: setting this to a
+   * template the select cannot offer would leave the form in a state with no
+   * matching option, which renders as an empty dropdown rather than an error.
+   */
+  preselectedTemplate?: TemplateKind;
   /** Templates for this clinician's discipline, most appropriate first. */
   allowedTemplates: TemplateKind[];
   discipline: Discipline;
@@ -56,7 +67,9 @@ export default function IntakeForm({
   needs: NeedDefinition[];
 }) {
   const [clientId, setClientId] = useState(preselectedClientId || clients[0]?.id || "");
-  const [templateKind, setTemplateKind] = useState<TemplateKind>(allowedTemplates[0]);
+  const [templateKind, setTemplateKind] = useState<TemplateKind>(
+    preselectedTemplate ?? allowedTemplates[0]
+  );
   const [state, formAction, pending] = useActionState<IntakeState, FormData>(
     submitStructuredNote,
     {}

@@ -12,11 +12,11 @@ export const dynamic = "force-dynamic";
 export default async function NewNotePage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string }>;
+  searchParams: Promise<{ client?: string; template?: string }>;
 }) {
   const user = await requireRole(["THERAPIST", "OWNER"]);
   const needs = await practiceNeeds(user.practiceId);
-  const { client: preselected } = await searchParams;
+  const { client: preselected, template: requestedTemplate } = await searchParams;
 
   // Non-active clients are fetched too, and shown, disabled, with their status.
   // Hiding them would leave a therapist hunting for a client who is right there
@@ -73,6 +73,14 @@ export default async function NewNotePage({
     );
   }
 
+  /*
+   * A template named in the URL is honoured only if this clinician is offered
+   * it. The dashboard's primary action puts it there, and a hand-typed or stale
+   * value must not leave the select showing an option it does not contain.
+   */
+  const offered = templatesFor(user.discipline);
+  const offeredTemplate = offered.find((kind) => kind === requestedTemplate);
+
   return (
     <div className="max-w-3xl">
       <h1 className="text-xl font-semibold tracking-tight">Write a note</h1>
@@ -90,7 +98,8 @@ export default async function NewNotePage({
           statusChangedAt: client.statusChangedAt,
         }))}
         preselectedClientId={preselected ?? ""}
-        allowedTemplates={templatesFor(user.discipline)}
+        preselectedTemplate={offeredTemplate}
+        allowedTemplates={offered}
         needs={needs}
         discipline={user.discipline}
         defaultWhatsApp={practice?.noteWriterWhatsApp ?? ""}

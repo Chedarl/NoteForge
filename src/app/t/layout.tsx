@@ -1,32 +1,39 @@
 import { requireRole } from "@/lib/auth/session";
 import { logout } from "@/lib/auth/actions";
 import { countPendingReviews } from "@/lib/field/reviewQueue";
+import { personaFor } from "@/lib/portal/personas";
 import { Nav } from "@/components/shared/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function TherapistLayout({ children }: { children: React.ReactNode }) {
   const user = await requireRole(["THERAPIST", "OWNER"]);
+  const persona = personaFor(user.discipline);
+
+  /*
+   * The bar used to carry the same eight items for everybody, which is what
+   * forced each person to translate "what I am holding" into "which tab is
+   * that". It comes from the persona now — a recovery coach sees four, a nurse
+   * practitioner sees five including her review queue — and adding a portal
+   * never means remembering to edit this file.
+   *
+   * Short labels are still deliberate: long ones wrapped the bar onto three
+   * rows on a phone and pushed the actual work below the fold.
+   */
+  const wantsReview = persona.nav.some((item) => item.href === "/t/review");
+
   // Counted on every page of the portal on purpose. A field worker's update is
   // sitting unread until this clinician reads it, and a queue you have to
   // remember to visit is a queue that goes stale.
-  const waiting = await countPendingReviews(user.id, user.practiceId);
+  const waiting = wantsReview ? await countPendingReviews(user.id, user.practiceId) : 0;
 
   return (
     <div className="min-h-screen">
       <Nav
         items={[
-          // Short labels on purpose: six long ones wrapped the bar onto three
-          // rows on a phone and pushed the actual work below the fold.
-          // "Write" is first because it is what most clinicians open the app for.
-          { href: "/t/write", label: "Write" },
-          { href: "/t", label: "Clients" },
-          { href: "/t/new", label: "Structured" },
-          { href: "/t/upload", label: "Photos" },
-          { href: "/t/review", label: "Review", badge: waiting },
-          { href: "/t/team", label: "Field team" },
-          { href: "/t/insights", label: "Insights" },
-          { href: "/t/profile", label: "Profile" },
+          ...persona.nav.map((item) =>
+            item.href === "/t/review" ? { ...item, badge: waiting } : item
+          ),
           // The way back to the internal side, for an owner who is both.
           ...(user.role === "OWNER" ? [{ href: "/s", label: "Queue" }] : []),
         ]}
@@ -45,8 +52,8 @@ export default async function TherapistLayout({ children }: { children: React.Re
             <a href="/t/profile" className="font-medium underline">
               set your discipline
             </a>
-            . It decides which template you get and what kind of note is written from your
-            submissions.
+            . It decides which template you get, what kind of note is written from your
+            submissions, and how this portal is laid out.
           </div>
         </div>
       )}
