@@ -3,9 +3,10 @@
 import TemplateFieldInput from "@/components/shared/TemplateField";
 import TemplateSections from "@/components/shared/TemplateSections";
 import PreviousSubmission from "@/components/therapist/PreviousSubmission";
+import { useFormDraft } from "@/lib/forms/draft";
 import type { NeedDefinition } from "@/lib/intake/needs";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { submitStructuredNote, type IntakeState } from "@/lib/intake/actions";
 import { TEMPLATES, readField } from "@/lib/intake/templates";
@@ -107,6 +108,42 @@ export default function IntakeForm({
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [attempt, setAttempt] = useState(0);
 
+  /*
+   * The same field block serves both recoveries, and that is why they share
+   * `draft` and `attempt`: a restored autosave and a bounced-back submission
+   * are the same problem — put answers back into an uncontrolled form — and two
+   * mechanisms for it would drift.
+   *
+   * Keyed by client and template, so a draft can never be silently reattached
+   * to a different person.
+   */
+  const saved = useFormDraft(
+    clientId ? `${clientId}:${templateKind}` : null,
+    // Which of this template's fields hold a list. See the note on the hook:
+    // `FormData` cannot tell one ticked box from one text field.
+    useMemo(
+      () =>
+        new Set(
+          TEMPLATES[templateKind].fields
+            .filter((field) => field.type === "multi")
+            .map((field) => field.id)
+        ),
+      [templateKind]
+    )
+  );
+
+  useEffect(() => {
+    if (!saved.restored) return;
+    setDraft(saved.restored as Record<string, unknown>);
+    setAttempt((n) => n + 1);
+  }, [saved.restored]);
+
+  // Filed means there is nothing left to recover.
+  useEffect(() => {
+    if (state.success) saved.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.success]);
+
   const rememberAnswers = (form: HTMLFormElement) => {
     const data = new FormData(form);
     const answers: Record<string, unknown> = {};
@@ -171,6 +208,8 @@ export default function IntakeForm({
     <form
       action={formAction}
       onSubmit={(event) => rememberAnswers(event.currentTarget)}
+      onChange={(event) => saved.capture(event.currentTarget)}
+      onInput={(event) => saved.capture(event.currentTarget)}
       className="mt-6 space-y-6"
     >
       {/* ── Client ─────────────────────────────────────────────────────── */}
@@ -263,6 +302,38 @@ export default function IntakeForm({
         </div>
       </div>
 
+      {saved.available ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+          <p className="text-sm font-medium text-amber-900">
+            You have an unsent draft for this client.
+          </p>
+          <p className="mt-0.5 text-xs text-amber-800">
+            Saved on this device at{" "}
+            {saved.available.savedAt.toLocaleString("en-GB", {
+              dateStyle: "short",
+              timeStyle: "short",
+            })}
+            . It has not been filed.
+          </p>
+          <div className="mt-2 flex gap-3 text-sm">
+            <button
+              type="button"
+              onClick={saved.restore}
+              className="font-medium text-amber-900 underline"
+            >
+              Put it back
+            </button>
+            <button
+              type="button"
+              onClick={saved.discard}
+              className="font-medium text-amber-800 underline"
+            >
+              Discard it
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* ── Template fields ────────────────────────────────────────────── */}
       <TemplateSections
         key={`${templateKind}-${attempt}`}
@@ -310,6 +381,11 @@ export default function IntakeForm({
         </button>
         <span className="text-xs text-slate-500">
           Checked for duplicates and status the moment it arrives.
+          {saved.savedAt ? (
+            <span className="block text-slate-400">
+              Draft kept on this device, not sent.
+            </span>
+          ) : null}
         </span>
       </div>
     </form>

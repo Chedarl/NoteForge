@@ -180,7 +180,7 @@ PDF export optimised for human and AI consumption.
 | All PHI encrypted at rest and in transit | **PARTIAL** — TLS throughout; client names encrypted at the column level; **note text is not** — it relies on Supabase volume encryption, which a leaked database credential defeats. See `SECURITY.md` |
 | Full audit trail: who viewed, edited, exported what and when | **DONE** |
 | Mobile-responsive forms | **DONE** |
-| **Autosave of drafts** | **TO BUILD** |
+| **Autosave of drafts** | **DONE** — on the device, not the server. It is offered back rather than restored silently, keyed by client and template so it can never be reattached to the wrong person, discarded after 24 hours, and cleared the moment the note is filed. A server-side draft would be clinical text about a named client stored before anybody decided it was a record, which is a bigger decision than "do not lose the form" |
 | **Mark a submission "Processed" and link it to the final note version** | **TO BUILD** |
 
 ---
