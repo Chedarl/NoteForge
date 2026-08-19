@@ -150,6 +150,54 @@ read-only view on the note page — and they now share
 `src/components/shared/TemplateField.tsx`. They used to have three copies of one
 loop, which was survivable when every field was a textarea and would not be now.
 
+## Sections, and two rules that came with them
+
+The §3 field sets made the nursing form about twenty fields long, so
+`TemplateField` gained `section` and the form renders through
+`src/components/shared/TemplateSections.tsx`. **Consecutive** fields sharing a
+section value are one group, so the field order *is* the grouping — there is no
+second list to fall out of step with it. A field with no section renders bare,
+which is why SOAP, DAP, BIRP and NARRATIVE look exactly as they always have.
+
+Native `<details>`, because **a collapsed `<details>` still submits the inputs
+inside it**. Conditional rendering would drop a section's answers the moment
+somebody collapsed it after typing, and it would look like the form losing work
+at random.
+
+**A refused submit must not wipe the form.** React resets an uncontrolled form
+once its action completes, which is right for one that succeeded and ruinous for
+one the server sent back — twenty fields lost along with the message naming the
+one that was empty. `IntakeForm` and `FieldUpdateForm` snapshot their answers on
+submit and re-key the field block, so `defaultValue` is read again on the
+remount. Any new form over a server action needs the same, and the field
+worker's page is the one where it matters most: that person is on a doorstep and
+has just spoken a paragraph into their phone.
+
+**Never put the `required` attribute on a control inside a section.** A
+`required` control inside a closed `<details>` makes the browser refuse the
+submit with "An invalid form control is not focusable" — nothing on screen
+changes, nothing is logged, the button simply stops working. `TemplateField`
+uses `aria-required`, and `assessCompleteness` is the gate that actually holds:
+it runs server-side on every intake path and returns the missing fields by name.
+
+**A field made required does not reach backwards.** `TemplateField.since` (an
+ISO day) means `assessCompleteness` only demands it of encounters on or after
+that date, and the call sites pass the submission's own `encounterDate`. Without
+it, adding one required field drops the mean-completeness figure on
+`/s/insights` overnight — which reads as a collapse in data quality and is
+nothing of the kind — and `saveNote`'s sign gate refuses to sign an
+already-submitted encounter until somebody fills in a field the clinician was
+never shown. `npm run verify:templates` fails the build if a new required field
+arrives without one.
+
+`npm run verify:templates` also catches what the compiler cannot: a `choice`
+with no options, two fields sharing an id, a section name that reappears after
+an interruption, and field ids that other modules name as string literals.
+`clientFacts.ts` names `riskSuicidal`, `changes.ts` names `sinceLastContact`,
+`submissionPdf.ts` names `encounterType` — rename any of them and the dashboard
+chip, the PDF's clinician statement and the §5 filename each silently return
+nothing, with lint, typecheck and build all green.
+
 ## Conventions
 
 - **Server-only vs client-safe.** Anything touching the database, a key or a secret gets
@@ -171,6 +219,36 @@ npm install
 npx prisma generate
 npm run dev
 ```
+
+### Running it signed in, without Supabase
+
+Supabase Auth is unreachable from a container behind an egress policy, which
+left the entire signed-in half of the product unopenable locally. You could
+type-check a form, render it to a string and file a submission from a script —
+and still not press the button.
+
+`DEV_AUTH=1` in `.env.local` turns on `/dev-signin`: a list of the seeded users,
+one click each. It sets a cookie holding an `authUserId` that already exists in
+the database, and `getSessionUser` looks it up exactly as it looks up the id
+Supabase would have returned. **Nothing downstream changes** — role checks,
+practice scoping, the status guardrail and the audit trail are all the real
+ones, which is the only reason a local run is worth anything.
+
+It cannot be switched on where it would matter. `NODE_ENV === "production"` and
+`VERCEL` are both checked before the opt-in, so a production build or any
+deployment answers 404 on that route and redirects to `/login` as before.
+`/api/health` reports `devAuth` so a deployment could say otherwise if it ever
+did. Verified both ways at runtime, not just asserted.
+
+A red banner sits on every page while it is on. That is deliberate: a screen
+reached through this door must never be mistakable for the real thing.
+
+**Use it.** Two of this codebase's worst bugs — an export that read "not
+recorded" everywhere, and a portal action pointing at a page with no microphone
+— survived a green lint, typecheck and build. A third, the form wiping twenty
+answers when the server refused one, survived all of that *plus* a suite of
+checks that drove the server action directly. It was found in a browser, in one
+click.
 
 ### Testing without Supabase
 

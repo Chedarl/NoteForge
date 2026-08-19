@@ -33,9 +33,12 @@ import type { Submission, TemplateKind } from "@prisma/client";
  * "added" and the section would be noise. The summary says the shape changed and
  * leaves the two side by side.
  *
- * When the §3 "what has changed since last contact" field is built, the
- * clinician's own sentence belongs at the top of this section as
- * `clinicianStatement` — their account first, the derived comparison under it.
+ * **The clinician's own sentence comes first.** The §3 "what has changed since
+ * last contact" field is read straight off the submission as
+ * `clinicianStatement`; the derived comparison sits under it. That field is
+ * then excluded from the field-by-field list, because a field whose whole
+ * purpose is to say what is different would read "changed" every single time
+ * and would be arguing with the sentence printed above it.
  */
 
 export type FieldChangeStatus = "added" | "changed" | "unchanged" | "cleared";
@@ -66,13 +69,33 @@ export interface ChangeSummary {
   /** Per-field movement, in template order. Empty when not comparable. */
   fields: FieldChange[];
   /**
-   * The clinician's own statement of what changed (§3, not yet built). Null
-   * until that field exists; the PDF renders the derived comparison either way.
+   * The clinician's own statement of what changed, from the template's
+   * `sinceLastContact` field. Null on a template that does not carry it — the
+   * one-box narrative — and on anything submitted before it existed. The PDF
+   * renders the derived comparison either way.
    */
   clinicianStatement: string | null;
 }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+/** The field id carrying the clinician's own account of what has changed. */
+const STATEMENT_FIELD = "sinceLastContact";
+
+/**
+ * The clinician's sentence, or null.
+ *
+ * Read through `renderFieldValue` like everything else rather than with a
+ * `typeof === "string"` check, so that if this field ever stops being prose it
+ * does not silently start returning null.
+ */
+function statementOf(raw: unknown, kind: TemplateKind): string | null {
+  const field = TEMPLATES[kind].fields.find((f) => f.id === STATEMENT_FIELD);
+  if (!field) return null;
+  const source = (raw ?? {}) as Record<string, unknown>;
+  const rendered = renderFieldValue(source[field.id], field).trim();
+  return rendered || null;
+}
 
 /** Equal after case, punctuation and whitespace are normalised away. */
 function sameValue(a: string, b: string): boolean {
@@ -123,6 +146,8 @@ export async function summariseChanges(
     "id" | "clientId" | "practiceId" | "encounterDate" | "templateKind" | "fields"
   >
 ): Promise<ChangeSummary> {
+  const statement = statementOf(submission.fields, submission.templateKind as TemplateKind);
+
   const previous = await prisma.submission.findFirst({
     where: {
       practiceId: submission.practiceId,
@@ -141,7 +166,7 @@ export async function summariseChanges(
       daysSincePrevious: null,
       comparable: false,
       fields: [],
-      clinicianStatement: null,
+      clinicianStatement: statement,
     };
   }
 
@@ -166,7 +191,7 @@ export async function summariseChanges(
       daysSincePrevious,
       comparable: false,
       fields: [],
-      clinicianStatement: null,
+      clinicianStatement: statement,
     };
   }
 
@@ -176,8 +201,9 @@ export async function summariseChanges(
   const now = stringFields(submission.fields, kind);
   const before = stringFields(previous.fields, kind);
 
-  const fields: FieldChange[] = TEMPLATES[submission.templateKind as TemplateKind].fields.map(
-    (field) => {
+  const fields: FieldChange[] = TEMPLATES[submission.templateKind as TemplateKind].fields
+    .filter((field) => !field.excludeFromComparison)
+    .map((field) => {
       const current = now[field.id];
       const prior = before[field.id];
 
@@ -189,15 +215,14 @@ export async function summariseChanges(
       else status = "unchanged";
 
       return { fieldId: field.id, label: field.label, status };
-    }
-  );
+    });
 
   return {
     previous: previousRecord,
     daysSincePrevious,
     comparable: true,
     fields,
-    clinicianStatement: null,
+    clinicianStatement: statement,
   };
 }
 

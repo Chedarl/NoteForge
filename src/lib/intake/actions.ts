@@ -81,7 +81,9 @@ export async function submitStructuredNote(
     fields[field.id] = readField(field, formData);
   }
 
-  const completeness = assessCompleteness(templateKind, fields);
+  // Assessed against the encounter's own date, so a field made required later
+  // is not demanded of a contact that happened before it existed.
+  const completeness = assessCompleteness(templateKind, fields, encounterDate);
   if (!completeness.complete) {
     return {
       error: "Some required sections are empty or too short to be a record.",

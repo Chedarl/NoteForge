@@ -49,6 +49,18 @@ export interface FieldAgentSession {
   linkId: string;
   practiceId: string;
   agent: User;
+  /**
+   * The clinician answerable for this link. Null when they have left, in which
+   * case what arrives falls back to the practice queue rather than becoming
+   * unreachable — the safe failure of the two.
+   */
+  supervisorId: string | null;
+  /**
+   * Their name, so the worker's page can say who is going to read this rather
+   * than "the office". A worker who does not know where an update lands has no
+   * way to judge what to put in it.
+   */
+  supervisorName: string | null;
 }
 
 /**
@@ -64,7 +76,7 @@ export async function resolveFieldLink(token: string): Promise<FieldAgentSession
 
   const link = await prisma.fieldLink.findUnique({
     where: { tokenHash: hashFieldToken(token) },
-    include: { agent: true },
+    include: { agent: true, supervisor: { select: { fullName: true } } },
   });
 
   if (!link || link.revokedAt !== null) return null;
@@ -72,7 +84,13 @@ export async function resolveFieldLink(token: string): Promise<FieldAgentSession
   // A link whose agent was moved to another practice is not a link any more.
   if (link.agent.practiceId !== link.practiceId) return null;
 
-  return { linkId: link.id, practiceId: link.practiceId, agent: link.agent };
+  return {
+    linkId: link.id,
+    practiceId: link.practiceId,
+    agent: link.agent,
+    supervisorId: link.supervisorId,
+    supervisorName: link.supervisor?.fullName ?? null,
+  };
 }
 
 /**
@@ -115,6 +133,12 @@ export async function createFieldAgent(input: {
   fullName: string;
   discipline: Discipline;
   createdById: string;
+  /**
+   * Who reads what this worker sends. Defaults to whoever created the link,
+   * which is the case that matters: a nurse handing a link to her case worker
+   * is taking responsibility for what comes back.
+   */
+  supervisorId?: string;
 }): Promise<MintedLink> {
   const token = mintFieldToken();
 
@@ -134,6 +158,7 @@ export async function createFieldAgent(input: {
         practiceId: input.practiceId,
         agentId: agent.id,
         createdById: input.createdById,
+        supervisorId: input.supervisorId ?? input.createdById,
         tokenHash: hashFieldToken(token),
       },
     });

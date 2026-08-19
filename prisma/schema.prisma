@@ -165,6 +165,8 @@ model User {
   createdShareLinks   ShareLink[]          @relation("ShareCreatedBy")
   fieldLinks          FieldLink[]          @relation("FieldLinkAgent")
   createdFieldLinks   FieldLink[]          @relation("FieldLinkCreatedBy")
+  supervisedLinks     FieldLink[]          @relation("FieldLinkSupervisor")
+  submissionsToReview Submission[]         @relation("SubmissionReviewer")
 
   @@index([practiceId, role])
 }
@@ -335,6 +337,13 @@ enum SubmissionState {
   IN_PROGRESS
   /// A signed note exists.
   DONE
+  /// Filed by a field worker and waiting for the clinician who supervises them.
+  ///
+  /// A recovery coach's account of a visit is not a clinical record until
+  /// somebody clinical has read it. This state is what keeps it out of the
+  /// documentation queue until they have — the whole point of a nurse handing
+  /// out the link rather than an administrator.
+  AWAITING_REVIEW
   /// Refused at the door — the client is not accepting submissions.
   BLOCKED
   /// Resolved as a duplicate of, or superseded by, another submission.
@@ -389,6 +398,18 @@ model Submission {
 
   /// Set when this submission was resolved as a duplicate or an update of an
   /// earlier one. The earlier row is never deleted.
+  /// Who must read this before it goes to documentation, and when they did.
+  ///
+  /// Set only for a submission that arrived through a field link. `reviewedAt`
+  /// null while `state` is AWAITING_REVIEW is the pending case; both set is a
+  /// clinician having taken responsibility for it, by name and at a time.
+  reviewerId String?
+  reviewer   User?     @relation("SubmissionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewedAt DateTime?
+  /// What the reviewing clinician added, if anything. Their words, kept apart
+  /// from the field worker's so the document shows who said which.
+  reviewNote String?
+
   supersedesId String?
   supersedes   Submission?  @relation("Supersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
   supersededBy Submission[] @relation("Supersedes")
@@ -403,6 +424,7 @@ model Submission {
   shareLinks   ShareLink[]
 
   @@index([practiceId, state, createdAt])
+  @@index([reviewerId, reviewedAt])
   @@index([clientId, encounterDate])
   @@index([practiceId, contentHash])
   @@index([submittedById])
@@ -480,6 +502,18 @@ model FieldLink {
   createdById String?
   createdBy   User?   @relation("FieldLinkCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
+  /// The clinician who is answerable for what comes in through this link.
+  ///
+  /// Kept separate from `createdBy` because the two can differ — an owner may
+  /// set a link up on a nurse's behalf, and it is the nurse who must read what
+  /// arrives. Everything filed through the link waits for this person.
+  ///
+  /// Nullable so the link survives them leaving: submissions then fall back to
+  /// the practice queue rather than becoming unreachable, which is the safe
+  /// failure of the two.
+  supervisorId String?
+  supervisor   User?   @relation("FieldLinkSupervisor", fields: [supervisorId], references: [id], onDelete: SetNull)
+
   createdAt  DateTime  @default(now())
   revokedAt  DateTime?
   lastUsedAt DateTime?
@@ -488,6 +522,7 @@ model FieldLink {
   @@index([practiceId, revokedAt])
   @@index([agentId])
   @@index([createdById])
+  @@index([supervisorId])
 }
 
 model ShareLink {

@@ -44,7 +44,13 @@ export default async function Queue({
     tab.key === "flagged"
       ? {
           practiceId: user.practiceId,
-          state: { notIn: ["DONE", "SUPERSEDED"] },
+          // AWAITING_REVIEW is excluded deliberately. The other tabs name their
+          // states, so they could never show one; this tab selects by exclusion,
+          // and a field update that happened to pick up a duplicate flag would
+          // have appeared here — readable and writable by the documentation
+          // team — before the supervising clinician had read a word of it. That
+          // is precisely the bypass the review step exists to prevent.
+          state: { notIn: ["DONE", "SUPERSEDED", "AWAITING_REVIEW"] },
           flags: { some: { resolution: "OPEN", kind: { not: "STATUS_BLOCK" } } },
         }
       : {
@@ -83,7 +89,7 @@ export default async function Queue({
       prisma.submission.count({
         where: {
           practiceId: user.practiceId,
-          state: { notIn: ["DONE", "SUPERSEDED"] },
+          state: { notIn: ["DONE", "SUPERSEDED", "AWAITING_REVIEW"] },
           flags: { some: { resolution: "OPEN", kind: { not: "STATUS_BLOCK" } } },
         },
       }),

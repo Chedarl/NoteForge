@@ -1,12 +1,13 @@
 "use client";
 
 import TemplateFieldInput from "@/components/shared/TemplateField";
+import TemplateSections from "@/components/shared/TemplateSections";
 import type { NeedDefinition } from "@/lib/intake/needs";
 
 import { useActionState, useMemo, useState } from "react";
 import Link from "next/link";
 import { submitStructuredNote, type IntakeState } from "@/lib/intake/actions";
-import { TEMPLATES } from "@/lib/intake/templates";
+import { TEMPLATES, readField } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import { StatusBadge } from "@/components/shared/ui";
@@ -41,6 +42,7 @@ interface ClientOption {
 export default function IntakeForm({
   clients,
   preselectedClientId,
+  preselectedTemplate,
   allowedTemplates,
   discipline,
   defaultWhatsApp,
@@ -48,6 +50,16 @@ export default function IntakeForm({
 }: {
   clients: ClientOption[];
   preselectedClientId: string;
+  /**
+   * Which template to open on, from the dashboard's primary action — a nurse
+   * practitioner pressing "Start a clinical encounter" should land on the
+   * nursing form, not on whatever happens to be first.
+   *
+   * Validated by the caller against `allowedTemplates`: setting this to a
+   * template the select cannot offer would leave the form in a state with no
+   * matching option, which renders as an empty dropdown rather than an error.
+   */
+  preselectedTemplate?: TemplateKind;
   /** Templates for this clinician's discipline, most appropriate first. */
   allowedTemplates: TemplateKind[];
   discipline: Discipline;
@@ -56,11 +68,47 @@ export default function IntakeForm({
   needs: NeedDefinition[];
 }) {
   const [clientId, setClientId] = useState(preselectedClientId || clients[0]?.id || "");
-  const [templateKind, setTemplateKind] = useState<TemplateKind>(allowedTemplates[0]);
+  const [templateKind, setTemplateKind] = useState<TemplateKind>(
+    preselectedTemplate ?? allowedTemplates[0]
+  );
   const [state, formAction, pending] = useActionState<IntakeState, FormData>(
     submitStructuredNote,
     {}
   );
+
+  /*
+   * What was typed, kept across a refused submit.
+   *
+   * React resets an uncontrolled form once its action completes. That is
+   * reasonable for a form that succeeded and ruinous for one the server sent
+   * back: a nurse practitioner fills in twenty fields, leaves one empty, and
+   * loses all twenty along with the error message telling her which. It was
+   * survivable when this form was five textareas. It is not now.
+   *
+   * So every submit snapshots the answers and bumps `attempt`, which re-keys
+   * the field block. Remounting is what makes it work — `defaultValue` is only
+   * read when a control mounts, so a re-render alone would not put the text
+   * back. Controlling twenty fields by hand would mean a state update per
+   * keystroke on a phone, for no benefit the moment the reset is handled.
+   *
+   * Found by filling the form in a browser and pressing the button. Lint,
+   * typecheck and a build were all green over it, and so was every check that
+   * drove the action directly instead of through a form.
+   */
+  const [draft, setDraft] = useState<Record<string, unknown>>({});
+  const [attempt, setAttempt] = useState(0);
+
+  const rememberAnswers = (form: HTMLFormElement) => {
+    const data = new FormData(form);
+    const answers: Record<string, unknown> = {};
+    // Through `readField`, so a checkbox group comes back as the array it is
+    // rather than as its first ticked box.
+    for (const field of TEMPLATES[templateKind].fields) {
+      answers[field.id] = readField(field, data);
+    }
+    setDraft(answers);
+    setAttempt((n) => n + 1);
+  };
 
   const selected = useMemo(
     () => clients.find((c) => c.id === clientId),
@@ -96,7 +144,11 @@ export default function IntakeForm({
   }
 
   return (
-    <form action={formAction} className="mt-6 space-y-6">
+    <form
+      action={formAction}
+      onSubmit={(event) => rememberAnswers(event.currentTarget)}
+      className="mt-6 space-y-6"
+    >
       {/* ── Client ─────────────────────────────────────────────────────── */}
       <div>
         <label htmlFor="clientId" className="block text-sm font-medium">
@@ -180,11 +232,22 @@ export default function IntakeForm({
       </div>
 
       {/* ── Template fields ────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        {template.fields.map((field) => (
-          <TemplateFieldInput key={field.id} field={field} needs={needs} />
-        ))}
-      </div>
+      <TemplateSections
+        key={`${templateKind}-${attempt}`}
+        fields={template.fields}
+        collapseOnPhone
+        // A required field the server refused is not much use inside a section
+        // the clinician has collapsed and cannot see.
+        openEverything={Boolean(state.missing?.length)}
+        renderField={(field) => (
+          <TemplateFieldInput
+            key={field.id}
+            field={field}
+            value={draft[field.id]}
+            needs={needs}
+          />
+        )}
+      />
 
       {state.blocked ? (
         <div role="alert" className="rounded-md border border-rose-300 bg-rose-50 p-4">

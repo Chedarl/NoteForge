@@ -1,178 +1,91 @@
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
-import { whatsappConfigured } from "@/lib/whatsapp/send";
-import SendClientList from "@/components/therapist/SendClientList";
-import { Card, EmptyState, Pill, SectionTitle, StatusBadge } from "@/components/shared/ui";
-import { fmtDate, ageLabel } from "@/lib/utils";
-import StatusChanger from "@/components/therapist/StatusChanger";
+import { personaFor } from "@/lib/portal/personas";
+import { loadClientFacts } from "@/lib/portal/clientFacts";
+import { countPendingReviews } from "@/lib/field/reviewQueue";
+import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { identityOf } from "@/lib/clients/identity";
+import PersonaDashboard, { type DashboardClient } from "@/components/portal/PersonaDashboard";
+import ClientRoster from "@/components/therapist/ClientRoster";
 
 export const dynamic = "force-dynamic";
 
 /**
- * The therapist's home: their own clients, with status front and centre.
+ * Where a clinician lands, shaped by what they do for a living.
  *
- * Status is the first thing on every row rather than a detail on a sub-page,
- * because the failure this product exists to stop begins with somebody not
- * knowing a status changed. If it takes a click to see, it will not be seen.
+ * Branching happens once, here, on `Discipline` — never on `UserRole`. A nurse
+ * practitioner and a social case worker are both `THERAPIST`, so keying this
+ * off role would hand them the same screen, which is the thing being fixed.
+ *
+ * Somebody with no discipline set, or who chose "Other", gets the roster they
+ * have always had. The layout already shows them a banner asking them to pick
+ * one; guessing at a portal for work we know nothing about would be worse than
+ * the screen they are used to.
  */
+
+/** How many clients the dashboard shows before it defers to the full roster. */
+const RECENT_LIMIT = 6;
+
 export default async function TherapistHome() {
   const user = await requireRole(["THERAPIST", "OWNER"]);
+  const persona = personaFor(user.discipline);
+
+  if (persona.kind === "GENERIC") {
+    return <ClientRoster user={user} />;
+  }
 
   const clients = await prisma.client.findMany({
     where: {
       practiceId: user.practiceId,
       ...(user.role === "THERAPIST" ? { primaryTherapistId: user.id } : {}),
     },
+    // Same ordering as the roster: active first, then most recently seen. A
+    // discharged client can still appear — the guardrail explains itself at
+    // write time, and hiding them here would make a status change invisible.
     orderBy: [{ status: "asc" }, { lastEncounterAt: "desc" }],
-    include: {
-      _count: { select: { submissions: true } },
-      statusConfirmations: {
-        where: { respondedAt: null },
-        select: { id: true },
-        take: 1,
-      },
+    take: RECENT_LIMIT,
+    select: {
+      id: true,
+      clientCode: true,
+      status: true,
+      lastEncounterAt: true,
+      givenNameEnc: true,
+      familyInitial: true,
+      initials: true,
+      birthYear: true,
     },
   });
 
-  const active = clients.filter((c) => c.status === "ACTIVE");
-  const inactive = clients.filter((c) => c.status !== "ACTIVE");
+  // Only pay for the review count where the persona actually shows one.
+  const wantsReview = persona.nav.some((item) => item.href === "/t/review");
 
-  /*
-   * The note-writer number lives on a column added in a later migration, so a
-   * database that was never migrated throws here while every other query is
-   * fine. Caught for the same reason it is caught on the write screen: this is
-   * the caseload, and it should still render.
-   */
-  let noteWriterNumber: string | null = null;
-  try {
-    const practice = await prisma.practice.findUnique({
-      where: { id: user.practiceId },
-      select: { noteWriterWhatsApp: true },
-    });
-    noteWriterNumber = practice?.noteWriterWhatsApp ?? null;
-  } catch {
-    // Left null — the list can still be built and downloaded.
-  }
+  const [facts, pendingReviews] = await Promise.all([
+    loadClientFacts(
+      user.practiceId,
+      clients.map((c) => c.id),
+      persona.clientFacts
+    ),
+    wantsReview ? countPendingReviews(user.id, user.practiceId) : Promise.resolve(0),
+  ]);
+
+  const rows: DashboardClient[] = clients.map((client) => ({
+    id: client.id,
+    clientCode: client.clientCode,
+    displayName: identityOf(client).displayName ?? client.initials,
+    status: client.status,
+    lastEncounterAt: client.lastEncounterAt,
+    facts: facts.get(client.id) ?? {},
+  }));
 
   return (
-    <div className="space-y-8">
-      {clients.length > 0 && (
-        <SendClientList
-          noteWriterNumber={noteWriterNumber}
-          whatsappReady={whatsappConfigured()}
-          clientCount={clients.length}
-          activeCount={active.length}
-        />
-      )}
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">My clients</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            {active.length} active, {inactive.length} not accepting new notes.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link
-            href="/t/new"
-            className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white"
-          >
-            Write a note
-          </Link>
-          <Link
-            href="/t/upload"
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium"
-          >
-            Photograph paper
-          </Link>
-          <Link
-            href="/t/clients/new"
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium"
-          >
-            Add client
-          </Link>
-        </div>
-      </div>
-
-      {clients.length === 0 ? (
-        <EmptyState
-          title="No clients yet"
-          body="Add the clients you see, then file notes against them. A client is a code, a first name and a surname initial — never a full identity."
-        />
-      ) : null}
-
-      {active.length > 0 ? (
-        <section>
-          <SectionTitle hint="These accept new notes.">Active</SectionTitle>
-          <div className="space-y-2">
-            {active.map((client) => (
-              <Card key={client.id} className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                <div className="min-w-40">
-                  <div className="font-medium">{client.clientCode}</div>
-                  <div className="text-xs text-slate-500">
-                    {identityOf(client).displayName ?? client.initials}
-                    {client.birthYear ? ` · b. ${client.birthYear}` : ""}
-                  </div>
-                </div>
-                <StatusBadge status={client.status} />
-                <div className="text-xs text-slate-500">
-                  Last session{" "}
-                  {client.lastEncounterAt ? (
-                    <>
-                      {fmtDate(client.lastEncounterAt)}{" "}
-                      <span className="text-slate-400">({ageLabel(client.lastEncounterAt)} ago)</span>
-                    </>
-                  ) : (
-                    "—"
-                  )}
-                </div>
-                {client.statusConfirmations.length > 0 ? (
-                  <Pill tone="amber">Confirmation requested</Pill>
-                ) : null}
-                <div className="ml-auto flex items-center gap-2">
-                  <Link
-                    href={`/t/new?client=${client.id}`}
-                    className="text-sm font-medium text-sky-700 underline"
-                  >
-                    Write note
-                  </Link>
-                  <StatusChanger clientId={client.id} current={client.status} />
-                </div>
-              </Card>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {inactive.length > 0 ? (
-        <section>
-          <SectionTitle hint="New notes are refused for these. Their history stays readable.">
-            Not accepting notes
-          </SectionTitle>
-          <div className="space-y-2">
-            {inactive.map((client) => (
-              <Card key={client.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-slate-50">
-                <div className="min-w-40">
-                  <div className="font-medium">{client.clientCode}</div>
-                  <div className="text-xs text-slate-500">
-                    {identityOf(client).displayName ?? client.initials}
-                  </div>
-                </div>
-                <StatusBadge status={client.status} />
-                <div className="max-w-md text-xs text-slate-500">
-                  Since {fmtDate(client.statusChangedAt)}
-                  {client.statusReason ? ` — ${client.statusReason}` : ""}
-                </div>
-                <div className="ml-auto">
-                  <StatusChanger clientId={client.id} current={client.status} />
-                </div>
-              </Card>
-            ))}
-          </div>
-        </section>
-      ) : null}
-    </div>
+    <PersonaDashboard
+      persona={persona}
+      userName={user.fullName}
+      disciplineLabel={
+        user.discipline ? DISCIPLINE_LABEL[user.discipline] : persona.title
+      }
+      pendingReviews={pendingReviews}
+      clients={rows}
+    />
   );
 }

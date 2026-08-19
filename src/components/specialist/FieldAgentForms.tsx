@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { Copy, Check, Link2 } from "lucide-react";
+import { useActionState } from "react";
+import { Link2 } from "lucide-react";
 import { addFieldAgent, withdrawFieldLink, type AgentState } from "@/lib/field/manage";
 import { DISCIPLINE_LABEL, DISCIPLINE_OPTIONS } from "@/lib/intake/disciplines";
+import ShareFieldLink from "@/components/shared/ShareFieldLink";
 
 /**
  * Creating a worker's way in, and showing it once.
@@ -14,20 +15,8 @@ import { DISCIPLINE_LABEL, DISCIPLINE_OPTIONS } from "@/lib/intake/disciplines";
  * a settings page is a credential that leaks the first time somebody shares
  * their screen.
  */
-export function AddFieldAgentForm() {
+export function AddFieldAgentForm({ clinicianName = "your clinician" }: { clinicianName?: string }) {
   const [state, action, pending] = useActionState<AgentState, FormData>(addFieldAgent, {});
-  const [copied, setCopied] = useState(false);
-
-  async function copy(url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2200);
-    } catch {
-      // Clipboard is refused in some in-app browsers; the field below is
-      // selectable, which is why it is a readonly input and not a paragraph.
-    }
-  }
 
   return (
     <div className="space-y-3">
@@ -62,27 +51,15 @@ export function AddFieldAgentForm() {
           <p className="text-sm font-semibold text-teal-900">
             {state.created.name}&rsquo;s link is ready
           </p>
-          <p className="mt-1 text-xs leading-relaxed text-teal-800">
+          <p className="mt-1 mb-2.5 text-xs leading-relaxed text-teal-800">
             Send it to them now and keep a copy if you want one. This is the only time it can be
-            shown — if it is lost, create another and withdraw this one.
+            shown &mdash; if it is lost, create another and withdraw this one.
           </p>
-          <div className="mt-2.5 flex gap-2">
-            <input
-              readOnly
-              value={state.created.url}
-              onFocus={(e) => e.currentTarget.select()}
-              className="nf-field flex-1 font-mono text-xs"
-              aria-label="Field worker link"
-            />
-            <button
-              type="button"
-              onClick={() => copy(state.created!.url)}
-              className="nf-btn nf-btn-secondary shrink-0"
-            >
-              {copied ? <Check size={15} /> : <Copy size={15} />}
-              <span className="ml-1.5">{copied ? "Copied" : "Copy"}</span>
-            </button>
-          </div>
+          <ShareFieldLink
+            workerName={state.created.name}
+            url={state.created.url}
+            clinicianName={clinicianName}
+          />
         </div>
       ) : null}
     </div>

@@ -33,7 +33,7 @@ Two answers the client gave that shape the work:
 | Social Case Worker login | **DONE** — `Discipline.SOCIAL_CASE_WORKER` |
 | Nurse Practitioner login | **DONE** — `Discipline.NURSE_PRACTITIONER` |
 | Admin / internal data-entry login | **DONE** — `UserRole.OWNER` and `SPECIALIST` |
-| Each role sees a different intake form | **PARTIAL** — discipline selects the template set; the richer role-specific field lists in §3 are **TO BUILD** |
+| Each role sees a different intake form | **DONE** — discipline selects the template set *and* the portal, and §3's role-specific section lists are built: `CASE_MANAGEMENT` and `NURSING` now ask different questions in different sections |
 | Role-based access control | **DONE** — `requireRole`, re-read per request so suspension is immediate |
 | All activity logged | **DONE** — append-only `AuditLog`, covering reads as well as writes |
 | Email + strong password | **PARTIAL** — Supabase Auth handles it; password policy is a Supabase dashboard setting, not enforced in app |
@@ -59,7 +59,7 @@ Two answers the client gave that shape the work:
 The form must be structured, versioned, and shaped so the exported PDF is easy for both
 humans and AI to parse.
 
-### Common header — **TO BUILD** except where noted
+### Common header — **DONE** except where noted
 
 - Date of encounter — **DONE** (`Submission.encounterDate`)
 - Professional name + role, auto-filled — **DONE**
@@ -68,30 +68,46 @@ humans and AI to parse.
   with free-text reason) — **DONE**, reason required for any non-active status
 - **Type of encounter** dropdown: Social Case Management Update / Nursing / Clinical
   Follow-up / Psych Evaluation / Psych Follow-up / Therapy Session / Crisis / Other —
-  **TO BUILD**
-- **Location / modality**: in-person, telehealth, phone, home visit — **TO BUILD**
-- **Duration in minutes** — **TO BUILD**
+  **DONE** — `encounterType`, and it is now the `[EncounterType]` segment of the §5 filename
+- **Location / modality**: in-person, telehealth, phone, home visit — **DONE** — `modality`
+- **Duration in minutes** — **DONE** — `durationMinutes`, a dropdown rather than a number
+  box and deliberately optional: a clinician who did not time the contact must not be
+  pushed into inventing a figure
 
-### Social Case Worker sections — **TO BUILD**
+The header is on every template that has a form. `NARRATIVE` is deliberately excluded — it
+is the template behind the one-box quick update and the field worker's link, neither of
+which renders a form at all.
 
-Current living situation / housing · support system and family involvement · benefits and
-resources status (Medicaid, SNAP, SSI, …) · safety concerns and risk factors · goals
-progress with barriers and next steps · referrals made or needed · client presentation and
-engagement level · anything new or changed since last contact.
+### Social Case Worker sections — **DONE**
 
-### Nurse Practitioner sections — **TO BUILD**
+`CASE_MANAGEMENT`, in six sections: *This contact* (header, what has changed, how they
+presented) · *Situation* (`housing` dropdown, situation, support system, `benefits`
+picker) · *Needs* (the needs picker and their own words) · *Safety* · *Progress and
+actions* (goals with barriers, actions taken, referrals) · *Next steps*.
 
-Chief complaint · current symptoms (structured checkboxes plus free text: mood, anxiety,
-sleep, appetite, energy, concentration) · mental status observations (appearance,
-behaviour, speech, mood, affect, thought process, cognition, insight, judgement) · risk
-assessment (suicidal ideation, homicidal ideation, self-harm, substance use — each with
-severity and plan) · medication changes, adherence and side effects · medical and
-psychiatric history updates · vitals and physical findings · clinical impression and
-working diagnosis · plan, interventions and follow-up.
+Housing and benefits are pickers rather than prose for the same reason the needs list is:
+two workers writing "no stable housing" and "homeless" about one person produce two
+unrelated strings, and neither can be counted or compared.
 
-### Shared sections — **TO BUILD** except where noted
+### Nurse Practitioner sections — **DONE**
 
-**What has changed since the last update** (required) · key quotes or client statements ·
+`NURSING`, in six sections: *This contact* (header, what has changed, chief complaint) ·
+*Symptoms* (an eight-box picker plus detail) · *Mental status* · *Risk* (suicidal
+ideation, thoughts of harming others, self-harm and substance use, each a graded level
+with the plan beside it) · *Findings* (vitals, history update) · *Impression and plan*
+(clinical impression, medication with adherence and side effects, plan and follow-up).
+
+**Mental status is one field, not the nine listed.** Nine boxes on a phone is the form
+nobody finishes, and every note this feeds writes the mental state examination as
+continuous prose — the export carries identical text either way. The nine are named in
+the field's hint so none is forgotten. Splitting it later is a migration of stored text,
+so it is worth being asked for rather than assumed.
+
+### Shared sections — **PARTIAL**, the required one is built
+
+**What has changed since the last update** (required) — **DONE**, `sinceLastContact`, and
+it is what the §5 PDF prints at the top of its comparison as the clinician's own statement,
+above the derived field-by-field movement · key quotes or client statements ·
 safety plan updates · barriers to care · strengths and protective factors · next
 appointment · attachments — **DONE**, photo upload with OCR, original image retained ·
 professional's free-text narrative — **DONE**.
@@ -122,13 +138,13 @@ whichever way it reached them.
 | Identical field labels every time | **DONE** — headings come from `TEMPLATES`, the structure the intake form renders from, so there is one label to change rather than three |
 | One logical block per section | **DONE** — an unfilled section prints "Not recorded" rather than being dropped, so an absence stays distinguishable from an oversight |
 | Client identifier and status prominent at the top | **DONE** — running header on every page; a non-active status also gets a called-out banner |
-| Called-out "changes since last submission" | **DONE** — `src/lib/export/changes.ts` compares against the previous encounter and reports which sections moved. It does not say whether a change matters (§6) |
+| Called-out "changes since last submission" | **DONE** — the clinician's own sentence first, then `src/lib/export/changes.ts` comparing against the previous encounter and reporting which sections moved. It does not say whether a change matters (§6) |
 | Timestamp, professional name and role, submission ID on every page | **DONE** — running footer, plus a page counter |
 | No decorative clutter | **DONE** |
 | Real selectable text, never image-only | **DONE** — standard PDF fonts, verified by extracting the text back out of a generated file |
 | Single column | **DONE** |
 | Embedded machine-readable JSON | **DONE** — attached as `submission.json`, keyed by template field id rather than by label |
-| Filename `[ClientID]_[YYYY-MM-DD]_[EncounterType]_[SubmissionID].pdf` | **DONE** — `[EncounterType]` is the template name until §3's encounter-type dropdown exists, then it becomes that |
+| Filename `[ClientID]_[YYYY-MM-DD]_[EncounterType]_[SubmissionID].pdf` | **DONE** — `[EncounterType]` is what the clinician chose, so two nursing encounters can be `…_Crisis_…` and `…_Psych-follow-up_…`. Falls back to the template name for the one-box narrative and for anything filed before the dropdown existed |
 | Downloadable by the professional | **DONE** — on the confirmation screen after submitting |
 | Automatically available in the internal queue | **DONE** — on every queue row and on the client record |
 

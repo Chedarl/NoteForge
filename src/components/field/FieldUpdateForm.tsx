@@ -18,11 +18,43 @@ import { speechSupported, startDictation, type Dictation } from "@/lib/voice/spe
  * changes the name and keeps going, and re-typing the date each time is the
  * kind of friction that ends with updates not being filed at all.
  */
-export default function FieldUpdateForm({ token, agentName }: { token: string; agentName: string }) {
+export default function FieldUpdateForm({
+  token,
+  agentName,
+  supervisorName,
+}: {
+  token: string;
+  agentName: string;
+  /**
+   * The clinician who gave out this link, when there is one. Named on the page
+   * rather than left implicit: a worker writing for "the office" writes
+   * differently from one writing for the nurse who knows the client, and one
+   * who does not know an update gets read before it becomes a note cannot judge
+   * how much to explain.
+   */
+  supervisorName: string | null;
+}) {
   const [state, action, pending] = useActionState<FieldUpdateState, FormData>(
     submitFieldUpdate,
     {}
   );
+
+  /*
+   * What was typed or dictated, kept across a refused submit.
+   *
+   * React resets an uncontrolled form once its action completes, and this one
+   * is refused for ordinary reasons: a client the guardrail will not accept, a
+   * name the office cannot match, an update too short to be a record. Losing
+   * the text then is the worst version of this bug in the product — the person
+   * holding this page is standing outside somebody's house and has just spoken
+   * a paragraph into their phone, and re-dictating it from memory is not the
+   * same paragraph.
+   *
+   * `attempt` re-keys the two fields so their `defaultValue` is read again;
+   * `defaultValue` alone is only applied when a control mounts.
+   */
+  const [draft, setDraft] = useState({ clientName: "", update: "" });
+  const [attempt, setAttempt] = useState(0);
 
   const [listening, setListening] = useState(false);
   const [micNote, setMicNote] = useState<string | null>(null);
@@ -64,7 +96,18 @@ export default function FieldUpdateForm({ token, agentName }: { token: string; a
   const today = new Date().toISOString().slice(0, 10);
 
   return (
-    <form action={action} className="space-y-4">
+    <form
+      action={action}
+      onSubmit={(event) => {
+        const data = new FormData(event.currentTarget);
+        setDraft({
+          clientName: String(data.get("clientName") ?? ""),
+          update: String(data.get("update") ?? ""),
+        });
+        setAttempt((n) => n + 1);
+      }}
+      className="space-y-4"
+    >
       <input type="hidden" name="token" value={token} />
 
       <div>
@@ -72,10 +115,12 @@ export default function FieldUpdateForm({ token, agentName }: { token: string; a
           Who did you see?
         </label>
         <input
+          key={`clientName-${attempt}`}
           id="clientName"
           name="clientName"
           required
           autoComplete="off"
+          defaultValue={draft.clientName}
           placeholder="Smith J"
           className="nf-field"
         />
@@ -120,11 +165,13 @@ export default function FieldUpdateForm({ token, agentName }: { token: string; a
           ) : null}
         </div>
         <textarea
+          key={`update-${attempt}`}
           id="update"
           name="update"
           ref={box}
           required
           rows={7}
+          defaultValue={draft.update}
           placeholder="Met at the shelter. Reports sleeping better, still no ID. Denies SI/HI. Agreed to come to the clinic Thursday."
           className="nf-field mt-1 resize-y"
         />
@@ -154,8 +201,11 @@ export default function FieldUpdateForm({ token, agentName }: { token: string; a
         <div className="flex gap-2.5 rounded-lg bg-teal-50 px-3 py-2.5 text-sm text-teal-900">
           <Check size={17} className="mt-0.5 shrink-0" />
           <span>
-            Filed for <strong>{state.success.clientCode}</strong>, {state.success.when}. Change the
-            name above to send another.
+            Filed for <strong>{state.success.clientCode}</strong>, {state.success.when}.{" "}
+            {state.success.awaitingReview && supervisorName
+              ? `${supervisorName} will read it before it goes for writing up.`
+              : "It has gone to the office."}{" "}
+            Change the name above to send another.
           </span>
         </div>
       ) : null}
@@ -165,7 +215,10 @@ export default function FieldUpdateForm({ token, agentName }: { token: string; a
       </button>
 
       <p className="text-center text-xs text-slate-500">
-        Sent as {agentName}. The office sees it straight away.
+        Sent as {agentName}.{" "}
+        {supervisorName
+          ? `${supervisorName} reads everything you send here first.`
+          : "The office sees it straight away."}
       </p>
     </form>
   );

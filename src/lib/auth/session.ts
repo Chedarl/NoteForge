@@ -1,10 +1,37 @@
 import "server-only";
 
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { DEV_AUTH_COOKIE, devAuthEnabled } from "@/lib/auth/devSession";
 import { prisma } from "@/lib/prisma";
 import { isMissingSchema, SchemaBehindError } from "@/lib/db/schemaLag";
 import type { User, UserRole } from "@prisma/client";
+
+/**
+ * Whichever identity provider is answering today.
+ *
+ * In development with `DEV_AUTH=1` that is a cookie holding an `authUserId`;
+ * everywhere else it is Supabase. Both return the same thing — an id to look a
+ * `User` row up by — so everything downstream is identical, which is what makes
+ * the local run worth anything.
+ *
+ * The development branch returns before the Supabase client is constructed, so
+ * a machine that cannot reach Supabase at all does not sit waiting for it.
+ */
+async function currentAuthUserId(): Promise<string | null> {
+  if (devAuthEnabled()) {
+    const jar = await cookies();
+    const impersonating = jar.get(DEV_AUTH_COOKIE)?.value?.trim();
+    if (impersonating) return impersonating;
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
 
 /**
  * Resolves the current user.
@@ -16,11 +43,8 @@ import type { User, UserRole } from "@prisma/client";
  * in a JWT cannot give you that.
  */
 export async function getSessionUser(): Promise<User | null> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-  if (!authUser) return null;
+  const authUserId = await currentAuthUserId();
+  if (!authUserId) return null;
 
   /*
    * This query selects every column on User, including ones added by later
@@ -42,7 +66,7 @@ export async function getSessionUser(): Promise<User | null> {
    */
   let user: User | null;
   try {
-    user = await prisma.user.findUnique({ where: { authUserId: authUser.id } });
+    user = await prisma.user.findUnique({ where: { authUserId } });
   } catch (error) {
     if (isMissingSchema(error)) throw new SchemaBehindError();
     throw error;

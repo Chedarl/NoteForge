@@ -109,7 +109,7 @@ export default async function SettingsPage() {
           <FieldLinkHint />
         </div>
         <Card className="p-5">
-          <AddFieldAgentForm />
+          <AddFieldAgentForm clinicianName={owner.fullName} />
           {fieldLinks.length > 0 ? (
             <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100 pt-1">
               {fieldLinks.map((link) => (

@@ -169,6 +169,15 @@ export async function ensureNote(submissionId: string) {
   const user = await requireStaff();
   const submission = await loadSubmission(submissionId, user.practiceId);
   if (!submission) return null;
+  /*
+   * A field update that no clinician has read yet is not writable, even by URL.
+   *
+   * The queue no longer lists these, but "not linked to" is not a boundary — a
+   * pasted or bookmarked id would otherwise open the editor and, worse, flip the
+   * submission to IN_PROGRESS, taking it out of the nurse's queue without her
+   * ever seeing it. Returning null puts the caller on its not-found path.
+   */
+  if (submission.state === "AWAITING_REVIEW") return null;
   if (submission.note) return submission.note;
 
   const note = await prisma.note.create({
@@ -220,7 +229,7 @@ export async function saveNote(_prev: NoteState, formData: FormData): Promise<No
     // The completeness gate. Deliberately at signing rather than at save, so a
     // half-finished note can be parked and picked up, but nothing incomplete can
     // ever be handed to a practice.
-    const completeness = assessCompleteness(templateKind, body);
+    const completeness = assessCompleteness(templateKind, body, submission.encounterDate);
     if (!completeness.complete) {
       return {
         error: "This note cannot be signed while required sections are empty.",

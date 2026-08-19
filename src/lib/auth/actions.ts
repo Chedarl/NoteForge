@@ -1,7 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
+import { DEV_AUTH_COOKIE, devAuthEnabled } from "@/lib/auth/devSession";
+import { cookies, headers } from "next/headers";
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -306,6 +307,13 @@ export async function setPassword(
 }
 
 export async function logout() {
+  // The development cookie is cleared whether or not it is in use, so signing
+  // out means signed out however you got in.
+  const jar = await cookies();
+  jar.delete(DEV_AUTH_COOKIE);
+
+  if (devAuthEnabled()) redirect("/dev-signin");
+
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
   redirect("/login");

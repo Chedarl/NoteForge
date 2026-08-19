@@ -1,3 +1,4 @@
+import { devAuthEnabled } from "@/lib/auth/devSession";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { whatsappConfigured } from "@/lib/whatsapp/send";
@@ -180,6 +181,13 @@ export async function GET() {
      * can see that; only the person on the other end can.
      */
     outboundLinks: siteUrlConfigured(),
+    /*
+     * Should be false everywhere that matters. The flag cannot be on in a
+     * production build — `NODE_ENV` and `VERCEL` both gate it structurally —
+     * but a deployment is exactly where you would want to be told if somehow it
+     * were, and this endpoint reports booleans rather than values for that.
+     */
+    devAuth: devAuthEnabled(),
     handwritingReading: readerConfigured(),
     whatsappDelivery: whatsappConfigured(),
     email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
