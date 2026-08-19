@@ -12,6 +12,7 @@ import { submitStructuredNote, type IntakeState } from "@/lib/intake/actions";
 import { TEMPLATES, readField } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { STATUS_LABEL } from "@/lib/clients/labels";
+import AddClientInline from "@/components/therapist/AddClientInline";
 import { StatusBadge } from "@/components/shared/ui";
 import ShareOnWhatsApp from "@/components/shared/ShareOnWhatsApp";
 import type { ClientStatus, Discipline, TemplateKind } from "@prisma/client";
@@ -85,6 +86,21 @@ export default function IntakeForm({
   needs: NeedDefinition[];
 }) {
   const [clientId, setClientId] = useState(preselectedClientId || clients[0]?.id || "");
+
+  /*
+   * Clients added from inside this form, held locally.
+   *
+   * The `clients` prop is server data and does not change until the page is
+   * re-rendered — and re-rendering the page is precisely what must not happen,
+   * because it would reset the note being written. So a newly added client is
+   * merged into the options here and selected, and the server's list catches up
+   * on the next load.
+   */
+  const [added, setAdded] = useState<ClientOption[]>([]);
+  const pickable = useMemo(
+    () => [...added, ...clients.filter((c) => !added.some((a) => a.id === c.id))],
+    [added, clients]
+  );
   const [templateKind, setTemplateKind] = useState<TemplateKind>(
     preselectedTemplate ?? allowedTemplates[0]
   );
@@ -164,8 +180,8 @@ export default function IntakeForm({
   };
 
   const selected = useMemo(
-    () => clients.find((c) => c.id === clientId),
-    [clients, clientId]
+    () => pickable.find((c) => c.id === clientId),
+    [pickable, clientId]
   );
   const template = TEMPLATES[templateKind];
   const blockedInPicker = selected && selected.status !== "ACTIVE";
@@ -231,13 +247,28 @@ export default function IntakeForm({
           onChange={(e) => setClientId(e.target.value)}
           className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         >
-          {clients.map((client) => (
+          {pickable.map((client) => (
             <option key={client.id} value={client.id}>
               {client.clientCode} · {client.label}
               {client.status !== "ACTIVE" ? ` — ${STATUS_LABEL[client.status]}` : ""}
             </option>
           ))}
         </select>
+
+        <AddClientInline
+          onAdded={(client) => {
+            setAdded((prev) => [
+              {
+                ...client,
+                status: "ACTIVE" as const,
+                statusReason: null,
+                statusChangedAt: new Date(),
+              },
+              ...prev.filter((c) => c.id !== client.id),
+            ]);
+            setClientId(client.id);
+          }}
+        />
 
         {capped ? (
           <p className="mt-1 text-xs text-slate-500">
