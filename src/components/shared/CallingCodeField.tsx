@@ -1,6 +1,6 @@
 "use client";
 
-import { CALLING_CODES } from "@/lib/sharing/phone";
+import { CALLING_CODES, splitE164 } from "@/lib/sharing/phone";
 
 /**
  * A country code beside the number, rather than hidden inside it.
@@ -26,6 +26,15 @@ export default function CallingCodeField({
   label?: string;
   optional?: boolean;
 }) {
+  /*
+   * A stored number arrives as E.164 and has to be taken apart before it can be
+   * shown, because the code lives in the select and the rest in the text box.
+   * Dropping the whole `+234…` into the text box left it beside a selector
+   * still reading `+1`, which is a number displayed as two countries at once.
+   */
+  const prefill = splitE164(defaultPhone);
+  const code = defaultPhone ? prefill.code : defaultCode;
+
   return (
     <div>
       <span className="block text-xs font-medium text-slate-700">
@@ -35,13 +44,16 @@ export default function CallingCodeField({
       <div className="mt-1 flex gap-2">
         <select
           name="callingCode"
-          defaultValue={defaultCode}
+          defaultValue={code}
           aria-label="Country code"
-          className="w-[7.5rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+          className="w-[8.5rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
         >
           {CALLING_CODES.map((c) => (
+            /* `c.label` — "Nigeria (+234)" — and not `+{c.code}`. The list was
+               rendering bare codes, so the dropdown read +1, +44, +237, +234,
+               +233 … with nothing to say which country any of them was. */
             <option key={c.code} value={c.code}>
-              +{c.code}
+              {c.label}
             </option>
           ))}
         </select>
@@ -50,7 +62,7 @@ export default function CallingCodeField({
           type="tel"
           inputMode="tel"
           autoComplete="tel-national"
-          defaultValue={defaultPhone}
+          defaultValue={prefill.national}
           placeholder="712 345 678"
           aria-label="Phone number"
           className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"

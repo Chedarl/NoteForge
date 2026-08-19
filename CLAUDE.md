@@ -49,6 +49,13 @@ These are load-bearing. Changing one is a product decision, not a refactor.
    top of `src/lib/ai/kimi.ts`. With no `KIMI_API_KEY` the whole product still works — a
    page just gets typed by hand, which is the process this replaces.
 
+   That property is what makes `AI_DISABLED=1` a real off switch: one variable removes the
+   model vendor from a deployment with no code change and no loss of function beyond
+   convenience, which `docs/BAA.md` makes the first step before any agreement is paid for.
+   It is checked in `kimiKeySource`, the single place a key is resolved, so it beats every
+   key — **including `MOONSHOT_API_KEY`, which is also read.** Deleting one key name is not
+   an off switch and looks identical to one; that is the whole reason this exists.
+
 ## Where things are
 
 ```
@@ -206,7 +213,12 @@ push the PDF into email, onto a memory stick, or back onto paper. So the channel
 stays and two things about it changed.
 
 **A link goes into the chat, never the document.** `sendLink` replaced
-`sendDocument` on every path. Pushing the bytes put clinical material onto
+`sendDocument` on every path — and this file claimed that before it was true.
+The caseload roster was missed, so a clinician's entire client list, names
+included whenever the box was ticked, went to Meta as an attachment while both
+this file and `SECURITY.md` said otherwise. `npm run verify:handoff` asserts
+`sendDocument` has no callers, because a claim nothing checks is a claim that
+drifts. Pushing the bytes put clinical material onto
 Meta's infrastructure and into a phone's cloud backup permanently — no expiry,
 no download ceiling, no way to withdraw it. A link keeps the bytes in the
 practice's own bucket, where all three of those apply, and what survives in a
@@ -234,9 +246,127 @@ Three things about it are load-bearing:
   code that must travel by a second route is real friction and pretending
   otherwise would just get it turned off everywhere.
 
+**Email carries the same link, never the file.** `src/lib/sharing/email.ts` is
+an alternative route for the handoff, for a note writer who works from an inbox.
+An attached PDF would be an unrevokable copy of a clinical narrative deposited in
+a mailbox nobody here controls — no expiry, no download ceiling, no way to
+withdraw it, and Resend signs no BAA on this tier. The link has all three. The
+message carries no client code and no six-digit run, and `tests/shareEmail.test.ts`
+asserts both against the real composer rather than a copy of it: the obvious
+well-meaning change is to put the code in the email to save the sender a phone
+call, which would make the lock decorative.
+
 The unlock proof is a derived cookie — an HMAC only this server can produce,
 scoped to one link's path — so there is no session table and no second database
 round trip on a route that already does an atomic claim.
+
+## The export is Word now, and the seed nearly hid a bug in it
+
+`src/lib/export/docx.ts` writes a real `.docx` on top of the ZIP writer already
+in that directory — a `.docx` *is* a ZIP of XML parts — so the note writer opens
+a document instead of decoding `## Assessment` and `**bold**`. `sessions.json`
+beside it is unchanged and is still the machine-readable copy.
+
+Two failure modes, neither of which a build catches:
+
+- **A missing part.** Word wants `[Content_Types].xml`, `_rels/.rels` and
+  `word/_rels/document.xml.rels`. Omit one and it reports "corrupt" without
+  saying which.
+- **A raw `&` or `<`.** Clinical prose has both — "BP 120/80 & stable", "<2
+  units daily" — and unescaped they are fatal XML parse errors, so the whole
+  document fails to open. Control characters below 0x20 arrive out of OCR and
+  are illegal in XML 1.0 with *no* escape that makes them legal; they are
+  dropped.
+
+`npm run verify:docx` unzips the output and asserts the structure Word requires.
+Its own tag-balance check was wrong on the first run and failed five perfectly
+good parts — worth remembering that a failing assertion is as likely to be wrong
+as the thing it asserts about.
+
+**The seed was storing fields keyed by label.** `{ Subjective: … }` where every
+reader looks up `subjective`, so all four seeded SOAP encounters exported with
+"not recorded" under every heading. Nothing failed: the rows were written, the
+ZIP was built, the JSON was valid, and the field map was silently empty — the
+same shape as the two export bugs already described in this file, found the same
+way, by opening the artefact. `make()` in `prisma/seed.ts` now throws on a key
+that is not a field id of that template. Note that the seed leaves existing
+submissions alone, so re-running it does not fix rows already written: delete
+them first.
+
+## Clinical text is encrypted, and a grep over the dump is why
+
+`src/lib/crypto/text.ts` seals every column carrying narrative — `rawText`,
+`normalizedText`, `fields`, `Note.body`, `ocrText`, `verifiedText`,
+`SubmissionFlag.detail`, `Client.statusReason` and `ClientStatusEvent.reason`.
+The schema names them `…Enc` while `@map` keeps the database column names, so
+the rename is compile-time only: no data migration, and a deployment running
+older code mid-rollout still reads its own rows.
+
+**The rename is the enforcement.** Renaming the TypeScript field broke all
+~110 call sites and the compiler listed every one, the same technique the
+`identityOf` refactor used. Leaving the names alone would have compiled
+perfectly and rendered `[object Object]` or "not recorded" everywhere.
+
+Four things are load-bearing:
+
+- **`openText` passes legacy plaintext through unchanged.** Every row written
+  before this is plaintext and there is no instant when they all convert.
+  Removing that path would blank every historical note.
+- **A failed decryption returns null, never the ciphertext.** For a name,
+  falling back to the client code is fine. Handing a note writer a page of
+  base64 would reach a PDF, a WhatsApp link and an export with nothing to say it
+  had failed.
+- **`contentHash` stays a digest of the plaintext.** It is layer 1 of the
+  detector and has to stay comparable with rows written before encryption.
+- **The trigram index is gone.** Nothing ever queried `normalizedText` —
+  `detectDuplicates` selects by client and date and tokenises eight rows in
+  memory — so the index was pure write cost, and over ciphertext it could not
+  work at all. That misreading is what had this recorded as blocked for months.
+
+**`npm run verify:at-rest` dumps the database and greps it, and it earned itself
+immediately.** Three columns were still plaintext after the obvious ones were
+sealed, with lint, typecheck, build and every unit test green:
+`SubmissionFlag.detail` (the classifier writes "records suicidal ideation denied
+on direct questioning"), `Client.statusReason`, and `ClientStatusEvent.reason` —
+the append-only copy of the same sentence, which survived even after the client
+column was fixed. None were in the plan, because the plan surveyed the obvious
+columns. Grep the artefact.
+
+One trap found by reading rather than by any tool: **`createMany` with a
+`.map()` defeats TypeScript's excess-property check.** `persistFlags` kept
+writing `detail:` after the column became `detailEnc`, compiled cleanly, and
+would have silently dropped the explanation from every duplicate flag.
+
+## Safe mode is a parameter, not a lookup
+
+`Practice.safeMode` means this practice never displays, prints or exports a
+client's name. `identityOf(policy, client)` takes the policy as its **first and
+required** argument, and that shape is the whole design: an optional trailing
+flag would have left all twenty existing call sites compiling and still printing
+names. A privacy control whose absence is indistinguishable from "off" is not a
+control. Required, the compiler names every place that has to answer the
+question — and `Client` has no `safeMode` field, so a client passed in the
+policy's position does not type-check either.
+
+Three things about it are load-bearing:
+
+- **Every failure resolves to safe mode ON.** `displayPolicyFor` returns
+  `{ safeMode: true }` for a practice it cannot find and for a database missing
+  the column. "I could not find out what this practice permits" must never print
+  a name.
+- **The export enforces it, not the screen that offers the tick box.** The ZIP
+  is reachable as `/api/export?names=1`, so a disabled checkbox stops nobody who
+  has seen an address bar. `buildExport` and `buildSubmissionPdf` AND the
+  caller's request with the policy — safe mode can refuse names and can never
+  add them to an export that did not ask.
+- **`MATCH_ONLY` is the one deliberate bypass**, in `resolve.ts`, and `grep
+  MATCH_ONLY` is the complete list of them. Matching a typed name against stored
+  ones is not displaying: without it, a practice in safe mode would silently
+  create a second client every time somebody typed a name it already held,
+  splitting one person's history across two records.
+
+Turning it on changes no layout anywhere, because `displayName` becomes null and
+every screen has handled a nameless client since the first day.
 
 ## Drafts live on the device
 

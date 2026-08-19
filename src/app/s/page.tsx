@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { openText } from "@/lib/crypto/text";
 import { requireRole } from "@/lib/auth/session";
 import { Card, EmptyState, Pill, StatusBadge } from "@/components/shared/ui";
 import { ageLabel, fmtDate } from "@/lib/utils";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import type { Prisma, SubmissionState } from "@prisma/client";
 
@@ -46,6 +48,7 @@ export default async function Queue({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
   const { tab: rawTab } = await searchParams;
   const tab = TABS.find((t) => t.key === rawTab) ?? TABS[1];
 
@@ -92,8 +95,8 @@ export default async function Queue({
           },
         },
         submittedBy: { select: { fullName: true } },
-        flags: { where: { resolution: "OPEN" }, select: { id: true, kind: true, detail: true } },
-        pages: { select: { id: true, verifiedText: true, ocrConfidence: true } },
+        flags: { where: { resolution: "OPEN" }, select: { id: true, kind: true, detailEnc: true } },
+        pages: { select: { id: true, verifiedTextEnc: true, ocrConfidence: true } },
       },
     }),
     Promise.all([
@@ -159,7 +162,7 @@ export default async function Queue({
         <div className="space-y-2">
           {submissions.map((submission) => {
             const overdue = ageLabel(submission.createdAt).endsWith("d");
-            const unverifiedPages = submission.pages.filter((p) => !p.verifiedText).length;
+            const unverifiedPages = submission.pages.filter((p) => !p.verifiedTextEnc).length;
 
             return (
               /*
@@ -178,7 +181,7 @@ export default async function Queue({
                     {submission.client.clientCode}
                   </span>
                   <span className="text-sm text-slate-500">
-                    {identityOf(submission.client).displayName ?? submission.client.initials}
+                    {identityOf(naming, submission.client).displayName ?? submission.client.initials}
                   </span>
                   <StatusBadge status={submission.client.status} />
                   <span className="ml-auto text-xs text-slate-500">
@@ -214,7 +217,7 @@ export default async function Queue({
                         <Pill tone={flag.kind === "CONFLICT" ? "rose" : "amber"}>
                           {flag.kind.replace("_", " ").toLowerCase()}
                         </Pill>
-                        <span className="text-slate-600">{flag.detail}</span>
+                        <span className="text-slate-600">{openText(flag.detailEnc)}</span>
                       </li>
                     ))}
                   </ul>

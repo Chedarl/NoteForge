@@ -194,3 +194,48 @@ export async function setPlatformUserStatus(formData: FormData): Promise<void> {
   });
   revalidatePath("/admin");
 }
+
+/**
+ * Turns safe mode on or off for the practice.
+ *
+ * Owner only, and separate from `updatePracticeSettings` on purpose: bundling a
+ * privacy control into the same submit as a phone number means it gets changed
+ * by somebody who came to edit the phone number, and the audit row would not be
+ * able to tell you which of the two they meant to do.
+ *
+ * Both directions are audited, and turning it *off* is the one worth finding
+ * later — it is the moment a practice decided its screens and exports could
+ * start carrying names again.
+ */
+export async function setSafeMode(
+  _prev: SettingsState,
+  formData: FormData
+): Promise<SettingsState> {
+  const owner = await requireRole(["OWNER"]);
+  const wanted = formData.get("safeMode") === "on";
+
+  const previous = await prisma.practice.findUnique({
+    where: { id: owner.practiceId },
+    select: { safeMode: true },
+  });
+  if (previous?.safeMode === wanted) return { success: "No change." };
+
+  await prisma.practice.update({
+    where: { id: owner.practiceId },
+    data: { safeMode: wanted },
+  });
+
+  await writeAudit({
+    practiceId: owner.practiceId,
+    actor: owner,
+    action: wanted ? "practice.safe_mode.on" : "practice.safe_mode.off",
+    entityType: "practice",
+    entityId: owner.practiceId,
+    changes: {
+      safeMode: { from: previous?.safeMode ? "on" : "off", to: wanted ? "on" : "off" },
+    },
+  });
+
+  revalidatePath("/s/settings");
+  return { success: wanted ? "Safe mode is on." : "Safe mode is off." };
+}

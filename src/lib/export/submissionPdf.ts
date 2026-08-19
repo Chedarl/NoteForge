@@ -3,6 +3,8 @@ import "server-only";
 import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
 import { identityOf } from "@/lib/clients/identity";
+import { openJson, openText } from "@/lib/crypto/text";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import { TEMPLATES, renderFieldValue, encounterTypeOf } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
@@ -49,6 +51,16 @@ export interface SubmissionPdfOptions {
    * window, so the name is an explicit request and is audited separately.
    */
   includeName: boolean;
+  /**
+   * Render the produced note's body instead of what the clinician submitted.
+   *
+   * The two are different documents and both are wanted. The submission PDF is
+   * "what we were given"; with this set it becomes "what was written from it",
+   * which is what a note writer receiving an automatically generated note needs
+   * to read. Falls back to the submission's own fields when no note exists yet,
+   * so a caller cannot end up with a page of empty sections.
+   */
+  fromNote?: boolean;
   /**
    * When set, the submission must either have been recorded by this user or
    * belong to a client they hold. Staff pass nothing and see the whole practice.
@@ -108,7 +120,15 @@ export function submissionPdfFilename(parts: {
 async function assembleSubmissionData(
   options: SubmissionPdfOptions
 ): Promise<SubmissionPdfData | null> {
-  const { submissionId, practiceId, includeName, restrictToTherapistId } = options;
+  const { submissionId, practiceId, restrictToTherapistId } = options;
+
+  /*
+   * Same rule as the ZIP, and it matters more here: this PDF is the document
+   * that gets sent to a note writer over WhatsApp. Safe mode has to reach the
+   * artefact that leaves the building, not only the screens inside it.
+   */
+  const naming = await displayPolicyFor(practiceId);
+  const includeName = options.includeName && !naming.safeMode;
 
   // Scoped by practiceId in the same query rather than checked afterwards, so a
   // guessed id from another tenant is a not-found and never a row this code has
@@ -128,31 +148,35 @@ async function assembleSubmissionData(
     },
     include: {
       client: true,
+      note: { select: { bodyEnc: true, state: true, aiAssisted: true, version: true } },
       submittedBy: { select: { fullName: true, role: true, discipline: true } },
       pages: { orderBy: { pageNumber: "asc" } },
-      flags: { where: { resolution: "OPEN" }, select: { kind: true, detail: true } },
+      flags: { where: { resolution: "OPEN" }, select: { kind: true, detailEnc: true } },
       practice: { select: { name: true } },
     },
   });
 
   if (!submission) return null;
 
-  const identity = identityOf(submission.client);
+  const identity = identityOf(naming, submission.client);
   const template = TEMPLATES[submission.templateKind as TemplateKind];
-  const raw = (submission.fields ?? {}) as Record<string, unknown>;
+  const raw = openJson(submission.fieldsEnc);
 
   // `renderFieldValue` rather than a string check: a picker's answer is an
   // array and a severity field's is an object, and both used to print as
   // "Not recorded." on a page the note writer works from.
+  const noteBody = options.fromNote ? openJson(submission.note?.bodyEnc) : null;
+  const source = noteBody && Object.keys(noteBody).length > 0 ? noteBody : raw;
+
   const sections: PdfSection[] = template.fields.map((field) => {
-    const rendered = renderFieldValue(raw[field.id], field);
+    const rendered = renderFieldValue(source[field.id], field);
     return { label: field.label, value: rendered || null };
   });
 
   const transcript =
     submission.kind === "PHOTO"
       ? submission.pages
-          .map((page) => page.verifiedText ?? "")
+          .map((page) => openText(page.verifiedTextEnc) ?? "")
           .filter((text) => text.trim())
           .join("\n\n") || null
       : null;
@@ -179,7 +203,7 @@ async function assembleSubmissionData(
 
     clientStatus: STATUS_LABEL[submission.client.status],
     clientStatusSince: iso(submission.client.statusChangedAt),
-    clientStatusReason: submission.client.statusReason,
+    clientStatusReason: openText(submission.client.statusReasonEnc),
 
     encounterDate: iso(submission.encounterDate),
     encounterType,
@@ -196,7 +220,7 @@ async function assembleSubmissionData(
 
     sections,
     transcript,
-    openFlags: submission.flags.map((flag) => ({ kind: flag.kind, detail: flag.detail })),
+    openFlags: submission.flags.map((flag) => ({ kind: flag.kind, detail: openText(flag.detailEnc) })),
     changes,
     changeHeadline: changeHeadline(changes),
 

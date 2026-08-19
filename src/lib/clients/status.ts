@@ -1,6 +1,8 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { sealText } from "@/lib/crypto/text";
+import { openText } from "@/lib/crypto/text";
 import { writeAudit } from "@/lib/audit";
 import { sendMail, siteUrl } from "@/lib/email/send";
 import { STATUS_LABEL } from "@/lib/clients/labels";
@@ -45,7 +47,7 @@ export async function changeClientStatus(input: StatusChangeInput): Promise<Clie
       where: { id: client.id },
       data: {
         status: toStatus,
-        statusReason: reason?.trim() || null,
+        statusReasonEnc: reason?.trim() ? sealText(reason.trim()) : null,
         statusChangedAt: new Date(),
         statusChangedById: actor?.id ?? null,
       },
@@ -56,7 +58,7 @@ export async function changeClientStatus(input: StatusChangeInput): Promise<Clie
         clientId: client.id,
         fromStatus: client.status,
         toStatus,
-        reason: reason?.trim() || null,
+        reasonEnc: reason?.trim() ? sealText(reason.trim()) : null,
         source,
         changedById: actor?.id ?? null,
       },
@@ -113,7 +115,7 @@ async function notifyStatusChange(
     subject: `NoteForge — ${client.clientCode} is now ${STATUS_LABEL[client.status]}`,
     text: [
       `Client ${client.clientCode} changed from ${STATUS_LABEL[fromStatus]} to ${STATUS_LABEL[client.status]}.`,
-      client.statusReason ? `Reason given: ${client.statusReason}` : null,
+      openText(client.statusReasonEnc) ? `Reason given: ${openText(client.statusReasonEnc)}` : null,
       actor ? `Changed by ${actor.fullName}.` : "Changed by the system.",
       "",
       client.status === "ACTIVE"

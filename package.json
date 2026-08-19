@@ -3,19 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "prisma generate && node scripts/write-migration-manifest.mjs && node scripts/migrate-on-deploy.mjs && next build",
-    "migrations:manifest": "node scripts/write-migration-manifest.mjs",
-    "start": "next start",
-    "lint": "eslint",
-    "typecheck": "tsc --noEmit",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:sql": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
+    "dev": "next dev",
+    "encrypt:existing": "tsx --conditions=react-server scripts/encrypt-existing-text.ts",
+    "lint": "eslint",
+    "migrations:manifest": "node scripts/write-migration-manifest.mjs",
+    "start": "next start",
+    "test": "node --conditions=react-server --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "verify:at-rest": "tsx --conditions=react-server scripts/verify-at-rest.ts",
+    "verify:docx": "node --conditions=react-server --import tsx scripts/verify-docx.ts",
+    "verify:handoff": "node --conditions=react-server --import tsx scripts/verify-handoff.ts",
     "verify:pdf": "node --import tsx scripts/verify-pdf.ts",
     "verify:portals": "node --conditions=react-server --import tsx scripts/verify-portals.ts",
-    "verify:templates": "node --import tsx scripts/verify-templates.ts",
-    "test": "node --conditions=react-server --import tsx --test tests/*.test.ts"
+    "verify:templates": "node --import tsx scripts/verify-templates.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -51,6 +55,6 @@
     "typescript": "^5"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx --conditions=react-server prisma/seed.ts"
   }
 }

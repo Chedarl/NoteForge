@@ -49,7 +49,7 @@ Two answers the client gave that shape the work:
 | Optional: initials only | **DONE** — `Client.initials` |
 | Optional: first name + last initial | **DONE** — `givenNameEnc` (encrypted) + `familyInitial` |
 | Optional: full name, only on explicit choice with a PHI acknowledgement | **TO BUILD** |
-| "Safe mode" toggle defaulting to the non-identifying ID | **PARTIAL** — the code always identifies and exports omit names by default; an explicit per-practice toggle is **TO BUILD** |
+| "Safe mode" toggle defaulting to the non-identifying ID | **DONE** — `Practice.safeMode`, set by an owner in Settings. Enforced inside `buildExport` and `buildSubmissionPdf` rather than on the screens that offer the tick box, because the export is reachable by URL |
 | Identifying information encrypted at rest and in transit | **DONE** — AES-256-GCM column encryption, key in the environment. Verified by dumping the table and grepping for seeded names: no plaintext |
 | Access role- and need-based | **DONE** |
 | Every submission permanently linked to the identifier | **DONE** — FK from `Submission` to `Client` |
@@ -245,6 +245,10 @@ it:
   de-identified one.
 - The tokenised, expiring `/share/[token]` link built alongside this remains available and
   is the safer option; it is one setting away from being the only one.
+- The same link can now be **emailed**, for a note writer who works from an inbox. A
+  link, never an attachment: an attached PDF is an unrevokable copy of a clinical
+  narrative in a mailbox nobody here controls, while the link expires, counts its
+  downloads and can be withdrawn. Nothing clinical and no client code is in the message.
 
 ## Outstanding, as one list
 
@@ -257,8 +261,8 @@ it:
    `src/lib/export/changes.ts` already computes the comparison for the PDF; what is
    missing is showing it at intake, which is where §4 says the value is.
 5. MFA enrolment and enforcement; session timeout.
-6. Optional full name behind an explicit PHI acknowledgement; an explicit safe-mode
-   toggle.
+6. Optional full name behind an explicit PHI acknowledgement. The safe-mode toggle is
+   done.
 7. Draft autosave.
 8. "Processed" marking and an optional link to the final note version.
 9. Inviting a colleague into an existing practice. A signup always creates a new one.

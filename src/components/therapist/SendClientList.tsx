@@ -32,17 +32,44 @@ export default function SendClientList({
   const [open, setOpen] = useState(false);
 
   if (state.success) {
-    const { whatsapp, filename, total, active, whatsappUrl } = state.success;
+    const { filename, total, active, whatsappUrl, passcode } = state.success;
     return (
       <div className="nf-card mb-6 border-[color:var(--nf-accent)] px-5 py-4">
         <p className="font-semibold text-slate-900">
           Client list ready — {active} active of {total}
         </p>
         <p className="mt-1 text-sm text-slate-700">
-          {whatsapp?.sent
-            ? whatsapp.message
-            : "Press the button to open WhatsApp with the link ready to send."}
+          Press the button to open WhatsApp with the link ready to send. The list itself
+          stays in NoteForge — what goes into the chat is an expiring link, never the
+          document.
         </p>
+
+        {/*
+          The code, before the button that opens WhatsApp.
+          Above it deliberately: auto-opening the messenger, or putting the code
+          below the fold, sweeps the sender past the only screen these six digits
+          are ever shown on — and then the recipient cannot open the document at
+          all, which looks like a broken link rather than a missing code.
+        */}
+        {passcode ? (
+          <div className="mt-3 rounded-lg border border-teal-300 bg-teal-50 p-3.5">
+            <p className="text-sm font-semibold text-teal-900">
+              This list is locked. Here is the code.
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-teal-800">
+              Give these six digits to the recipient <strong>some other way</strong> — say
+              them on the phone, or use a different app. In the same chat as the link they
+              do nothing.
+            </p>
+            <p className="my-3 text-center font-mono text-3xl font-semibold tracking-[0.28em] tabular-nums text-slate-900">
+              {passcode}
+            </p>
+            <p className="text-center text-xs text-teal-800">
+              This is the only time it is shown. Five wrong attempts and the link stops
+              working permanently.
+            </p>
+          </div>
+        ) : null}
 
         {/* The link is what makes this work without a Meta Business account.
             Opened rather than auto-redirected: the clinician has just been
@@ -122,6 +149,29 @@ export default function SendClientList({
               <span className="nf-hint mt-0.5 block">
                 Off by default. A list of everyone you see is a larger disclosure than any
                 single session — WhatsApp is not a protected channel.
+              </span>
+            </span>
+          </label>
+
+          {/*
+            The same opt-out the round share offers, and the same rule behind it:
+            a list carrying names is locked with no choice, a de-identified one is
+            locked by default and the sender may decline. A code that has to
+            travel by a second route is real friction, and pretending otherwise
+            would just get it turned off everywhere.
+          */}
+          <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+            <input
+              type="checkbox"
+              name="unlocked"
+              value="yes"
+              className="mt-0.5 size-4 accent-[color:var(--nf-accent)]"
+            />
+            <span className="text-slate-700">
+              Send without a code
+              <span className="nf-hint mt-0.5 block">
+                The link alone will open it. Ignored when names are included — a named
+                caseload is always locked.
               </span>
             </span>
           </label>

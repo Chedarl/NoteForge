@@ -1,0 +1,16 @@
+-- Drops the trigram index over Submission."normalizedText".
+--
+-- Its schema comment claimed it turned "has anyone already given us this?"
+-- into a sub-second question rather than a table scan. It never did.
+-- `detectDuplicates` selects its candidates by "clientId", "state" and
+-- "encounterDate" — all covered by other indexes — takes at most eight rows,
+-- and compares them in memory. No query in the codebase has ever read that
+-- column, so this index was pure write cost on every submission.
+--
+-- It also could not survive the column being encrypted: trigrams over
+-- ciphertext match nothing, so leaving it would be a growing index that is
+-- wrong as well as unused.
+--
+-- The pg_trgm extension itself is left enabled. Dropping it is a bigger and
+-- less reversible step, and an unused extension costs nothing.
+DROP INDEX IF EXISTS "Submission_normalizedText_idx";

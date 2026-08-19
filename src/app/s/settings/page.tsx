@@ -3,14 +3,16 @@ import { requireRole } from "@/lib/auth/session";
 import { Card, Pill } from "@/components/shared/ui";
 import {
   AddFieldAgentForm,
-  WithdrawLinkForm,
   FieldLinkHint,
 } from "@/components/specialist/FieldAgentForms";
 import { listFieldAgents } from "@/lib/field/manage";
+import FieldWorkerList from "@/components/specialist/FieldWorkerList";
+import { siteUrlConfigured } from "@/lib/email/send";
 import {
   InviteUserForm,
   UserStatusForm,
   WhatsAppSettingsForm,
+  SafeModeForm,
 } from "@/components/specialist/PracticeSettingsForms";
 // DISCIPLINE_LABEL lives in a module with no "use client" precisely so both
 // sides can share it. PracticeSettingsForms is a client component, and a plain
@@ -36,6 +38,7 @@ export default async function SettingsPage() {
   });
 
   const fieldLinks = await listFieldAgents(owner.practiceId);
+  const reachable = siteUrlConfigured();
 
   /*
    * `findUniqueOrThrow` selects every column on Practice, including
@@ -45,12 +48,12 @@ export default async function SettingsPage() {
    * working. That is the third screen to fail this way, so it is caught here
    * too and reported as what it is.
    */
-  let practice: { noteWriterWhatsApp: string | null } | null = null;
+  let practice: { noteWriterWhatsApp: string | null; safeMode: boolean } | null = null;
   let migrationsPending = false;
   try {
     practice = await prisma.practice.findUnique({
       where: { id: owner.practiceId },
-      select: { noteWriterWhatsApp: true },
+      select: { noteWriterWhatsApp: true, safeMode: true },
     });
   } catch {
     migrationsPending = true;
@@ -91,6 +94,14 @@ export default async function SettingsPage() {
           <WhatsAppSettingsForm defaultPhone={practice?.noteWriterWhatsApp ?? ""} />
         </Card>
         <Card className="p-5">
+          <h2 className="font-semibold">Client identification</h2>
+          <p className="mt-1 mb-5 text-sm text-slate-600">
+            §2 of the specification: the code identifies, the name confirms. Safe mode drops
+            the second half.
+          </p>
+          <SafeModeForm safeMode={practice?.safeMode ?? false} />
+        </Card>
+        <Card className="p-5">
           <h2 className="font-semibold">Invite a team member</h2>
           <p className="mt-1 mb-5 text-sm text-slate-600">
             They receive a secure email link, set their own password, then land in the
@@ -109,32 +120,22 @@ export default async function SettingsPage() {
           <FieldLinkHint />
         </div>
         <Card className="p-5">
-          <AddFieldAgentForm clinicianName={owner.fullName} />
+          <AddFieldAgentForm clinicianName={owner.fullName} linksReachable={reachable} />
           {fieldLinks.length > 0 ? (
-            <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100 pt-1">
-              {fieldLinks.map((link) => (
-                <div key={link.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
-                  <span className="font-medium text-slate-900">{link.agent.fullName}</span>
-                  <span className="text-sm text-slate-500">
-                    {link.agent.discipline ? DISCIPLINE_LABEL[link.agent.discipline] : "Field worker"}
-                  </span>
-                  {link.revokedAt ? (
-                    <Pill tone="rose">Withdrawn</Pill>
-                  ) : (
-                    <Pill tone="emerald">Active</Pill>
-                  )}
-                  <span className="text-xs text-slate-500">
-                    {link.useCount === 0
-                      ? "not used yet"
-                      : `${link.useCount} update${link.useCount === 1 ? "" : "s"}`}
-                  </span>
-                  <span className="ml-auto">
-                    {link.revokedAt ? null : (
-                      <WithdrawLinkForm linkId={link.id} name={link.agent.fullName} />
-                    )}
-                  </span>
-                </div>
-              ))}
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <FieldWorkerList
+                rows={fieldLinks.map((link) => ({
+                  linkId: link.id,
+                  name: link.agent.fullName,
+                  kind: link.agent.discipline
+                    ? DISCIPLINE_LABEL[link.agent.discipline]
+                    : "Field worker",
+                  revoked: Boolean(link.revokedAt),
+                  useCount: link.useCount,
+                }))}
+                clinicianName={owner.fullName}
+                linksReachable={reachable}
+              />
             </div>
           ) : null}
         </Card>

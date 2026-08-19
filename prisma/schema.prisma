@@ -22,11 +22,11 @@
 
 generator client {
   provider        = "prisma-client-js"
-  // Needed so the trigram index on Submission.normalizedText can be declared in
-  // this file rather than hand-written into a migration. When it lives only in
-  // SQL, Prisma does not know it exists and every subsequent `migrate diff`
-  // proposes dropping it — which is exactly how a production index quietly
-  // disappears during an unrelated schema change.
+  // Kept for the pg_trgm extension declaration below. The trigram index it was
+  // originally added for is gone: nothing ever queried the column it sat on,
+  // and that column now holds ciphertext. The extension stays declared because
+  // removing it would generate a DROP EXTENSION, which is a bigger and less
+  // reversible step than leaving an unused extension enabled.
   previewFeatures = ["postgresqlExtensions"]
 }
 
@@ -46,21 +46,43 @@ datasource db {
 /// and every query filters on it, because the alternative — remembering to
 /// filter — is how one practice ends up reading another's clients.
 model Practice {
-  id                 String   @id @default(cuid())
+  id                 String  @id @default(cuid())
   name               String
   /// Short slug used in client codes, e.g. "RVN" -> RVN-0142.
-  code               String   @unique
+  code               String  @unique
   /// Optional E.164 number used to prefill the one-button WhatsApp handoff.
   /// It is a staff destination, never a client's phone number.
   noteWriterWhatsApp String?
   /// Hours we promise to turn a submission around in. Drives queue urgency and
   /// the on-time figure in the insights dashboard.
-  slaHours           Int      @default(48)
+  slaHours           Int     @default(48)
   /// How many days of silence before the daily sweep asks a therapist to
   /// confirm a client is still active.
-  staleDays          Int      @default(60)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  staleDays          Int     @default(60)
+
+  /// Safe mode: names are never displayed, printed or exported for this
+  /// practice — the client code and initials carry every screen on their own.
+  ///
+  /// A practice setting rather than a per-user preference, and per-*practice*
+  /// rather than global, because it is a decision about what a practice is
+  /// permitted to show, not a decision about what one person finds convenient.
+  /// A clinician who could turn it off for themselves would be a clinician for
+  /// whom it is not a control.
+  ///
+  /// Names are still stored, still encrypted, and still matched against when
+  /// somebody types one to find a client. Safe mode governs *display*: the
+  /// alternative — refusing to hold the name at all — is a different product
+  /// decision, and it would break the one job the name does (§2: the code
+  /// identifies, the name confirms).
+  ///
+  /// Default false, so turning it on is a deliberate act by a practice that
+  /// wants it. The resolver that reads this column fails the other way: a
+  /// practice it cannot read resolves to safe mode on, because "I do not know
+  /// what this practice allows" must not print a name.
+  safeMode Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   users               User[]
   clients             Client[]
@@ -152,22 +174,22 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  clients             Client[]             @relation("PrimaryTherapist")
-  submissions         Submission[]         @relation("SubmittedBy")
-  verifiedPages       SubmissionPage[]     @relation("VerifiedBy")
-  resolvedFlags       SubmissionFlag[]     @relation("ResolvedBy")
-  authoredNotes       Note[]               @relation("AuthoredBy")
-  signedNotes         Note[]               @relation("SignedBy")
-  statusEvents        ClientStatusEvent[]  @relation("StatusChangedBy")
-  clientsLastTouched  Client[]             @relation("ClientStatusChangedBy")
-  statusConfirmations StatusConfirmation[] @relation("ConfirmationTherapist")
-  auditLogs           AuditLog[]
-  createdShareLinks   ShareLink[]          @relation("ShareCreatedBy")
-  fieldLinks          FieldLink[]          @relation("FieldLinkAgent")
-  createdFieldLinks   FieldLink[]          @relation("FieldLinkCreatedBy")
-  supervisedLinks     FieldLink[]          @relation("FieldLinkSupervisor")
-  submissionsToReview Submission[]         @relation("SubmissionReviewer")
-  submissionsProcessed Submission[]        @relation("ProcessedBy")
+  clients              Client[]             @relation("PrimaryTherapist")
+  submissions          Submission[]         @relation("SubmittedBy")
+  verifiedPages        SubmissionPage[]     @relation("VerifiedBy")
+  resolvedFlags        SubmissionFlag[]     @relation("ResolvedBy")
+  authoredNotes        Note[]               @relation("AuthoredBy")
+  signedNotes          Note[]               @relation("SignedBy")
+  statusEvents         ClientStatusEvent[]  @relation("StatusChangedBy")
+  clientsLastTouched   Client[]             @relation("ClientStatusChangedBy")
+  statusConfirmations  StatusConfirmation[] @relation("ConfirmationTherapist")
+  auditLogs            AuditLog[]
+  createdShareLinks    ShareLink[]          @relation("ShareCreatedBy")
+  fieldLinks           FieldLink[]          @relation("FieldLinkAgent")
+  createdFieldLinks    FieldLink[]          @relation("FieldLinkCreatedBy")
+  supervisedLinks      FieldLink[]          @relation("FieldLinkSupervisor")
+  submissionsToReview  Submission[]         @relation("SubmissionReviewer")
+  submissionsProcessed Submission[]         @relation("ProcessedBy")
 
   @@index([practiceId, role])
 }
@@ -234,7 +256,12 @@ model Client {
   status            ClientStatus @default(ACTIVE)
   /// Why the status is what it is. Required by the app for any non-ACTIVE
   /// status — "discharged" with no reason is how a record becomes unauditable.
-  statusReason      String?
+  ///
+  /// Sealed, for the same reason as `SubmissionFlag.detailEnc`: in practice it
+  /// holds sentences like "Notified by family 4 weeks after the event" and
+  /// "Treatment goals met; discharged at review", which are clinical facts about
+  /// a named person. `redact.ts` already classified it that way for logging.
+  statusReasonEnc   String?      @map("statusReason")
   statusChangedAt   DateTime     @default(now())
   statusChangedById String?
   statusChangedBy   User?        @relation("ClientStatusChangedBy", fields: [statusChangedById], references: [id], onDelete: SetNull)
@@ -272,7 +299,12 @@ model ClientStatusEvent {
 
   fromStatus ClientStatus?
   toStatus   ClientStatus
-  reason     String?
+  /// Sealed, like `Client.statusReasonEnc` — this is the append-only copy of
+  /// the same sentence, and it was found still readable by dumping the database
+  /// after the client column had been sealed. Two columns hold the same fact and
+  /// only one had been protected, which is the failure mode a grep over the dump
+  /// exists to catch.
+  reasonEnc  String?       @map("reason")
   /// How we learned: THERAPIST_UPDATE, CONFIRMATION_SWEEP, ADMIN, SEED.
   source     String
 
@@ -336,6 +368,12 @@ enum TemplateKind {
   /// plan. Kept separate from SOAP because the fields a nurse practitioner must
   /// record — and therefore the fields the export must carry — are not the same.
   NURSING
+  /// Situation, Intervention, Response, Plan — the shape the practice's own
+  /// case-management notes are written in, for both telehealth and in-person
+  /// community contacts. Added because the notes their reviewers actually read
+  /// are in this format, and a generated note in the wrong shape is one a
+  /// reviewer has to rewrite by hand, which is the work this removes.
+  SIRP
 }
 
 enum SubmissionState {
@@ -396,17 +434,34 @@ model Submission {
   encounterDate DateTime
 
   /// Structured template answers, keyed by field id. Empty for photo intake.
-  fields  Json   @default("{}")
-  /// Free text as given. For a photo submission this is filled from the verified
-  /// page transcripts once a human confirms them.
-  rawText String @default("")
+  ///
+  /// Sealed — `{ nfenc: "<envelope>" }` — because these answers *are* the
+  /// clinical content, and `rawTextEnc` is derived from them. Encrypting only
+  /// the derived copy would have protected nothing. Read with `openJson`; the
+  /// whole object is sealed as one value rather than per-key, so the field ids
+  /// are hidden too ("this encounter recorded a suicidal-risk level" is a
+  /// disclosure before anybody reads the value).
+  fieldsEnc  Json   @default("{}") @map("fields")
+  /// Free text as given, sealed. For a photo submission this is filled from the
+  /// verified page transcripts once a human confirms them. Read with `openText`,
+  /// which passes pre-encryption rows through unchanged.
+  rawTextEnc String @default("") @map("rawText")
 
   /// sha256 of the normalised text. Exact match is a certain duplicate and
   /// costs one index lookup, so it runs before anything cleverer.
-  contentHash    String
-  /// Deduplicated, stopword-stripped tokens, space-joined. Backs the Jaccard
-  /// comparison in `src/lib/dedupe/similarity.ts` and the pg_trgm index.
-  normalizedText String @default("")
+  ///
+  /// Deliberately **not** keyed, and deliberately still derived from the
+  /// plaintext: it has to stay comparable across rows written before and after
+  /// encryption, and a digest of a whole document's sorted unique token bag is
+  /// not something an attacker can invert or guess. Making it an HMAC would
+  /// break layer 1 of the detector against every existing row for no real gain.
+  contentHash       String
+  /// Deduplicated, stopword-stripped tokens, space-joined, sealed.
+  ///
+  /// Nothing has ever queried this column — the detector selects candidates by
+  /// client and date and tokenises in memory — so encrypting it costs nothing
+  /// and the trigram index that used to sit on it has been dropped.
+  normalizedTextEnc String @default("") @map("normalizedText")
 
   /// Set when this submission was resolved as a duplicate or an update of an
   /// earlier one. The earlier row is never deleted.
@@ -458,6 +513,14 @@ model Submission {
   relatedFlags SubmissionFlag[] @relation("FlagRelated")
   note         Note?
   shareLinks   ShareLink[]
+  /// The trigram index over the normalised text is gone.
+  ///
+  /// Its comment claimed it turned "has anyone already given us this?" into a
+  /// sub-second question. It never did: `detectDuplicates` picks candidates by
+  /// `clientId` and an encounter-date window — the two indexes above — takes
+  /// eight rows and compares them in memory. No query in the codebase has ever
+  /// read that column, so the index was pure write cost on every submission,
+  /// and over ciphertext it could not work even in principle.
 
   @@index([practiceId, state, createdAt])
   @@index([reviewerId, reviewedAt])
@@ -470,11 +533,6 @@ model Submission {
   @@index([supersedesId])
   /// Backs the export, which is always "this client, these session dates".
   @@index([practiceId, encounterDate])
-  /// Trigram index over the normalised text. Turns "has anyone already given us
-  /// this?" into a sub-second question rather than a table scan that gets slower
-  /// every week. GIN rather than GiST: the row is written once per encounter and
-  /// read on every intake, so the slower build buys the lookup speed we want.
-  @@index([normalizedText(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -641,8 +699,8 @@ model SubmissionPage {
   /// reads go through the role-gated media route.
   storagePath String
 
-  /// Raw reader output, exactly as returned.
-  ocrText       String?
+  /// Raw reader output, exactly as returned. Sealed — read with `openText`.
+  ocrTextEnc    String? @map("ocrText")
   /// Per-block text and confidence, so the UI can shade what to distrust.
   ocrBlocks     Json?
   /// Lowest block confidence on the page, 0–1. Below the threshold in
@@ -652,11 +710,16 @@ model SubmissionPage {
   /// swapped and old transcripts need explaining.
   ocrProvider   String?
 
-  /// What a human confirmed. Null until someone has actually looked.
-  verifiedText String?
-  verifiedAt   DateTime?
-  verifiedById String?
-  verifiedBy   User?     @relation("VerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
+  /// What a human confirmed. Null until someone has actually looked. Sealed.
+  ///
+  /// This is the one that becomes `Submission.rawTextEnc` for a photo intake and
+  /// the transcript block on the PDF, so it is the page column that actually
+  /// travels. `ocrTextEnc` is sealed alongside it because a machine transcript
+  /// of a clinical note is the same material, confirmed or not.
+  verifiedTextEnc String?   @map("verifiedText")
+  verifiedAt      DateTime?
+  verifiedById    String?
+  verifiedBy      User?     @relation("VerifiedBy", fields: [verifiedById], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
 
@@ -701,11 +764,18 @@ model SubmissionFlag {
   relatedSubmissionId String?
   relatedSubmission   Submission? @relation("FlagRelated", fields: [relatedSubmissionId], references: [id], onDelete: SetNull)
 
-  kind   FlagKind
+  kind      FlagKind
   /// 0–1 similarity where meaningful. Null for STATUS_BLOCK.
-  score  Float?
-  /// One sentence a human can act on without opening both documents.
-  detail String?
+  score     Float?
+  /// One sentence a human can act on without opening both documents. Sealed.
+  ///
+  /// This column was found holding plaintext clinical narrative by dumping the
+  /// database and grepping it — the contradiction classifier writes summaries
+  /// like "the earlier submission records suicidal ideation denied on direct
+  /// questioning", and the near-duplicate detail lists the clinical terms that
+  /// are new. `redact.ts` already named `detail` as material that must never
+  /// reach a log; it had simply never been protected at rest.
+  detailEnc String?  @map("detail")
 
   resolution   FlagResolution @default(OPEN)
   resolvedAt   DateTime?
@@ -748,8 +818,12 @@ model Note {
   submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
   templateKind TemplateKind
-  /// Template-shaped body, keyed by field id.
-  body         Json         @default("{}")
+  /// Template-shaped body, keyed by field id. Sealed — read with `openJson`.
+  ///
+  /// The produced note, which is the most sensitive single object in the
+  /// schema: a submission is what a clinician handed over, this is the finished
+  /// clinical document written from it.
+  bodyEnc      Json         @default("{}") @map("body")
   state        NoteState    @default(DRAFT)
 
   /// True when a model proposed any of this text. Kept for the record, because

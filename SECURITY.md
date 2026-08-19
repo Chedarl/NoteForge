@@ -50,6 +50,35 @@ Consequences worth knowing:
 - Lose the key and the names are gone — and nothing else is. No code, note, submission,
   flag or audit row depends on them.
 
+**Clinical text is encrypted at the column level too.** Not only the client's
+name: `Submission.rawText`, `normalizedText` and `fields`, `Note.body`,
+`SubmissionPage.ocrText` and `verifiedText`, `SubmissionFlag.detail`,
+`Client.statusReason` and `ClientStatusEvent.reason` are all AES-256-GCM with a
+random IV per value (`src/lib/crypto/text.ts`). A leaked database password, a
+misconfigured backup or a support engineer with production access now yields
+ciphertext for the narrative as well as the name.
+
+This was previously listed here as blocked, on the grounds that the duplicate
+detector searches the note text. **It does not.** `detectDuplicates` selects
+candidates by `clientId` and an encounter-date window — indexed columns, no text
+— takes at most eight rows and tokenises in memory. No query has ever read
+`normalizedText`, and the pg_trgm index over it has been dropped.
+
+Three things worth knowing:
+
+- **Rows written before this change stay readable until backfilled.**
+  `openText` passes non-envelope values through unchanged, so nothing breaks
+  mid-rollout. `npm run encrypt:existing -- --commit` seals them; it is
+  idempotent and safe to re-run.
+- **`contentHash` is deliberately still a digest of the plaintext.** It is the
+  exact-match layer of the detector and has to stay comparable with older rows.
+  A digest of a whole document's sorted token bag is not invertible.
+- **`npm run verify:at-rest` dumps the database and greps it.** That check is
+  what found three of these columns — `SubmissionFlag.detail`,
+  `Client.statusReason` and `ClientStatusEvent.reason` were all still plaintext
+  after the obvious columns had been sealed, with lint, typecheck, build and the
+  unit tests all green. It runs in CI.
+
 **Exports do not include names by default.** The download is the moment material leaves
 the controlled environment. Names are an explicit checkbox, the UI states what it makes
 the bundle, and the audit trail records `export.downloaded_with_names` distinctly from
@@ -100,13 +129,26 @@ not for production caseloads.
 
 ## WhatsApp document delivery
 
-The write-and-send path (`/t/write`) sends the finished PDF to the practice's note-writer
-number through Meta's Cloud API. **Meta does not sign a BAA covering WhatsApp on any
-plan**, so a document sent that way is permanently outside the controlled environment: on
-Meta's infrastructure, in a chat history, and in whatever backs that phone up.
+**Meta does not sign a BAA covering WhatsApp on any plan**, and the practice hands work
+over on WhatsApp all day. Removing the channel would not make anything safer — it would
+push the document into email, onto a memory stick, or back onto paper. So the channel
+stays, and what travels over it changed.
 
-This was raised with the client and chosen deliberately over a link-only flow; the
-decision is recorded in `docs/REQUIREMENTS.md` §7a. What the code does about it:
+**A link goes into the chat, never the document.** `sendLink` replaced `sendDocument` on
+every path. Pushing the bytes put a clinical narrative onto Meta's infrastructure and
+into a phone's cloud backup permanently — no expiry, no download ceiling, no way to
+withdraw it. A link keeps the bytes in the practice's own bucket, where all three apply,
+and what survives in a backup is a URL that has since stopped working. `sendDocument` is
+still in the codebase, documented as not for clinical use.
+
+**Possession of the message is not access to the note.** The link sits behind a six-digit
+passcode (`src/lib/sharing/passcode.ts`), HMAC'd and bound to that link's own token, meant
+to travel by a second route. Five wrong attempts and the link is finished, permanently.
+
+So what Meta receives is a phone number, a timestamp and an opaque URL — no client code,
+no name, no clinical content. The original decision to send the document itself is
+recorded in `docs/REQUIREMENTS.md` §7a; this is the hardened form of it. What the code
+does besides:
 
 - Documents carry the **client code only** unless the clinician explicitly ticks the name
   box on that submission. Off by default, every time.
@@ -123,12 +165,9 @@ is a change to one call site in `src/lib/intake/quickActions.ts`.
 
 ## What is not implemented
 
-- Business Associate Agreements. Nothing in code can substitute.
-- Encryption of *note text* at the column level. Client names are encrypted; the notes
-  themselves are not. Supabase encrypts at rest at the volume level, so a compromised
-  database credential still reads plaintext clinical narrative. This is the largest
-  remaining gap, and it is a bigger job than the name field was: note text is searched by
-  the duplicate detector, which encryption would break.
+- Business Associate Agreements. Nothing in code can substitute. `docs/BAA.md` is the
+  register: every third party, what reaches it, whether it will sign, and the order to
+  deal with them in.
 - Retention and deletion schedules. The schema keeps everything forever, which is right
   for audit and wrong for data minimisation past the practice's retention period.
 - Separation of psychotherapy notes from progress notes as distinct record types. The
@@ -143,6 +182,12 @@ is a change to one call site in `src/lib/intake/quickActions.ts`.
 2. Replace the OCR provider with one under a BAA, or bring it in-house. This costs one
    file: implement `readHandwriting` in `src/lib/ai/reader.ts`. Nothing else in the
    codebase knows which engine is being used.
+
+   Until then, **set `AI_DISABLED=1`** — it removes the vendor outright and costs
+   nothing, because every AI call already degrades to null. Do not do this by deleting
+   the key: two variable names are read (`KIMI_API_KEY`, `MOONSHOT_API_KEY`), so removing
+   one leaves the vendor live while every screen looks as though it is gone. `/api/health`
+   reports `modelVendor` so the state can be confirmed from outside.
 3. Decide about drafting (`src/lib/ai/noteDraft.ts`) and pair classification
    (`src/lib/ai/classify.ts`). Both send note text to the model provider. Both degrade
    cleanly to nothing when `KIMI_API_KEY` is unset — the product still works, a person

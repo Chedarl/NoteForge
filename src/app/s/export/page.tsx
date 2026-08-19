@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { fieldCryptoConfigured } from "@/lib/crypto/field";
 import ExportForm from "@/components/specialist/ExportForm";
 
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function ExportPage() {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
 
   const clients = await prisma.client.findMany({
     where: { practiceId: user.practiceId },
@@ -35,7 +37,7 @@ export default async function ExportPage() {
 
       <ExportForm
         clients={clients.map((client) => {
-          const identity = identityOf(client);
+          const identity = identityOf(naming, client);
           return {
             id: client.id,
             clientCode: client.clientCode,

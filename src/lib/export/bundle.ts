@@ -2,10 +2,13 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { identityOf } from "@/lib/clients/identity";
+import { openJson, openText } from "@/lib/crypto/text";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import { createZip, safeSegment } from "@/lib/export/zip";
+import { renderDocx, type DocxBlock } from "@/lib/export/docx";
 import type { Discipline, Prisma, TemplateKind } from "@prisma/client";
 
 /**
@@ -94,7 +97,21 @@ interface ClientRecord {
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 export async function buildExport(options: ExportOptions): Promise<ExportResult> {
-  const { practiceId, clientIds, from, to, includeNames, includeBlocked } = options;
+  const { practiceId, clientIds, from, to, includeBlocked } = options;
+
+  /*
+   * Safe mode overrules the request, and it is enforced *here* rather than on
+   * the screen that offers the tick box.
+   *
+   * The export is reached by URL — `/api/export?names=1` — so a checkbox
+   * disabled in the browser stops nobody who has ever seen the address bar.
+   * This function is the only way an export bundle is built, which makes it the
+   * only place the override cannot be gone around. The caller's request is
+   * ANDed with the policy: safe mode can refuse names, and it can never add
+   * them to an export that did not ask.
+   */
+  const naming = await displayPolicyFor(practiceId);
+  const includeNames = options.includeNames && !naming.safeMode;
 
   // `to` arrives as a date, meaning "up to and including that day".
   const toEnd = new Date(to);
@@ -126,7 +143,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
         include: {
           submittedBy: { select: { fullName: true, discipline: true } },
           pages: { orderBy: { pageNumber: "asc" } },
-          flags: { where: { resolution: "OPEN" }, select: { kind: true, detail: true } },
+          flags: { where: { resolution: "OPEN" }, select: { kind: true, detailEnc: true } },
         },
       },
     },
@@ -141,7 +158,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
   const records: ClientRecord[] = clients
     .filter((client) => client.submissions.length > 0)
     .map((client) => {
-    const identity = identityOf(client);
+    const identity = identityOf(naming, client);
 
     return {
       clientCode: client.clientCode,
@@ -150,7 +167,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
       birthYear: client.birthYear,
       status: STATUS_LABEL[client.status],
       statusSince: iso(client.statusChangedAt),
-      statusReason: client.statusReason,
+      statusReason: openText(client.statusReasonEnc),
       primaryClinician: client.primaryTherapist?.fullName ?? null,
       sessions: client.submissions.map((submission) => {
         // Discipline is read from the submission, which captured it at write
@@ -168,7 +185,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
          * silently, and only unzipping the result would have shown it.
          */
         const fields: Record<string, string> = {};
-        const raw = (submission.fields ?? {}) as Record<string, unknown>;
+        const raw = openJson(submission.fieldsEnc);
         for (const field of template.fields) {
           const rendered = renderFieldValue(raw[field.id], field);
           if (rendered) fields[field.id] = rendered;
@@ -177,7 +194,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
         const transcript =
           submission.kind === "PHOTO"
             ? submission.pages
-                .map((page) => page.verifiedText ?? "")
+                .map((page) => openText(page.verifiedTextEnc) ?? "")
                 .filter((t) => t.trim())
                 .join("\n\n") || null
             : null;
@@ -198,7 +215,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
           submittedBy: submission.submittedBy.fullName,
           fields,
           transcript,
-          openFlags: submission.flags.map((f) => ({ kind: f.kind, detail: f.detail })),
+          openFlags: submission.flags.map((f) => ({ kind: f.kind, detail: openText(f.detailEnc) })),
         };
       }),
     };
@@ -207,7 +224,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
   const sessionCount = records.reduce((sum, r) => sum + r.sessions.length, 0);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
-  const files: { path: string; content: string }[] = [
+  const files: { path: string; content: string | Buffer }[] = [
     {
       path: "README.md",
       content: readme(practice?.name ?? "practice", from, to, records, includeNames, includeBlocked),
@@ -232,17 +249,26 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
     },
   ];
 
-  // One folder per client, one Markdown file per session inside it.
+  /*
+   * One folder per client, one Word document per session inside it.
+   *
+   * These were Markdown. The person who opens them types a clinical note into
+   * Credible or ICANotes from what they read, and `## Assessment` with `**bold**`
+   * through it is not read, it is decoded — a cost paid on every session, by the
+   * one group the export exists for. `sessions.json` beside them is unchanged and
+   * is still the machine-readable copy, so nothing downstream that parses the
+   * archive loses anything.
+   */
   for (const client of records) {
     const folder = safeSegment(client.clientCode);
     files.push({
-      path: `${folder}/_client.md`,
-      content: clientMarkdown(client),
+      path: `${folder}/_client.docx`,
+      content: renderDocx(clientBlocks(client)),
     });
     for (const session of client.sessions) {
       files.push({
-        path: `${folder}/${safeSegment(session.sessionDate)}.md`,
-        content: sessionMarkdown(client, session),
+        path: `${folder}/${safeSegment(session.sessionDate)}.docx`,
+        content: renderDocx(sessionBlocks(client, session)),
       });
     }
   }
@@ -269,72 +295,109 @@ function clientHeading(client: ClientRecord): string {
     : `${client.clientCode} — ${client.initials}`;
 }
 
-function sessionMarkdown(client: ClientRecord, session: SessionRecord): string {
+/**
+ * One session, as blocks.
+ *
+ * Same information and same order as the Markdown this replaced — this is a
+ * change of format, not of content, and the note writer reading it should find
+ * everything exactly where it was.
+ */
+function sessionBlocks(client: ClientRecord, session: SessionRecord): DocxBlock[] {
   const template = TEMPLATES[session.templateCode];
-  const lines: string[] = [
-    `# ${clientHeading(client)}`,
-    "",
-    `**Session date:** ${session.sessionDate}`,
-    `**Discipline:** ${session.discipline ?? "not recorded"}`,
-    `**Template:** ${session.template}`,
-    `**Recorded by:** ${session.submittedBy} (${session.source})`,
-    `**Client status at export:** ${client.status} (since ${client.statusSince})`,
-    "",
+  const blocks: DocxBlock[] = [
+    { kind: "heading", level: 1, text: clientHeading(client) },
+    { kind: "field", label: "Session date", value: session.sessionDate },
+    { kind: "field", label: "Discipline", value: session.discipline ?? "not recorded" },
+    { kind: "field", label: "Template", value: session.template },
+    { kind: "field", label: "Recorded by", value: `${session.submittedBy} (${session.source})` },
+    {
+      kind: "field",
+      label: "Client status at export",
+      value: `${client.status} (since ${client.statusSince})`,
+    },
   ];
 
   if (client.status !== "Active") {
-    lines.push(
-      `> This client is **${client.status}**${client.statusReason ? ` — ${client.statusReason}` : ""}.`,
-      "> Confirm this session predates that before a note is written from it.",
-      ""
-    );
+    blocks.push({
+      kind: "note",
+      text: `This client is ${client.status}${
+        client.statusReason ? ` — ${client.statusReason}` : ""
+      }. Confirm this session predates that before a note is written from it.`,
+    });
   }
 
   if (session.openFlags.length > 0) {
-    lines.push("> **Unresolved flags on this submission:**");
+    blocks.push({ kind: "note", text: "Unresolved flags on this submission:" });
     for (const flag of session.openFlags) {
-      lines.push(`> - ${flag.kind.replace(/_/g, " ").toLowerCase()}: ${flag.detail ?? ""}`);
+      blocks.push({
+        kind: "note",
+        text: `• ${flag.kind.replace(/_/g, " ").toLowerCase()}: ${flag.detail ?? ""}`,
+      });
     }
-    lines.push("");
   }
 
-  lines.push("---", "");
+  blocks.push({ kind: "spacer" });
 
   if (session.transcript) {
-    lines.push("## Transcript of handwritten pages", "", session.transcript, "");
+    blocks.push(
+      { kind: "heading", level: 2, text: "Transcript of handwritten pages" },
+      { kind: "para", text: session.transcript }
+    );
   } else {
     for (const field of template.fields) {
       const value = session.fields[field.id];
-      lines.push(`## ${field.label}`, "", value || "_not recorded_", "");
+      blocks.push(
+        { kind: "heading", level: 2, text: field.label },
+        // "not recorded" rather than an empty paragraph: a blank space under a
+        // heading reads as a rendering fault, and the distinction between "no
+        // answer" and "the export dropped it" is the one this must not blur.
+        { kind: "para", text: value || "not recorded" }
+      );
     }
   }
 
-  return lines.join("\n");
+  return blocks;
 }
 
-function clientMarkdown(client: ClientRecord): string {
-  const lines: string[] = [
-    `# ${clientHeading(client)}`,
-    "",
-    `- **Client code:** ${client.clientCode}`,
-    `- **Initials:** ${client.initials}`,
-    client.birthYear ? `- **Birth year:** ${client.birthYear}` : null,
-    `- **Status:** ${client.status} since ${client.statusSince}`,
-    client.statusReason ? `- **Reason:** ${client.statusReason}` : null,
-    `- **Clinician:** ${client.primaryClinician ?? "unassigned"}`,
-    `- **Sessions in this export:** ${client.sessions.length}`,
-    "",
-    "## Sessions",
-    "",
-  ].filter((l): l is string => l !== null);
+/** The client's own summary page — status, and what is in this folder. */
+function clientBlocks(client: ClientRecord): DocxBlock[] {
+  const blocks: DocxBlock[] = [
+    { kind: "heading", level: 1, text: clientHeading(client) },
+    { kind: "field", label: "Client code", value: client.clientCode },
+    { kind: "field", label: "Initials", value: client.initials },
+  ];
+
+  if (client.birthYear) {
+    blocks.push({ kind: "field", label: "Birth year", value: String(client.birthYear) });
+  }
+  blocks.push({
+    kind: "field",
+    label: "Status",
+    value: `${client.status} since ${client.statusSince}`,
+  });
+  if (client.statusReason) {
+    blocks.push({ kind: "field", label: "Reason", value: client.statusReason });
+  }
+  blocks.push(
+    { kind: "field", label: "Clinician", value: client.primaryClinician ?? "unassigned" },
+    {
+      kind: "field",
+      label: "Sessions in this export",
+      value: String(client.sessions.length),
+    },
+    { kind: "heading", level: 2, text: "Sessions" }
+  );
 
   for (const session of client.sessions) {
-    lines.push(
-      `- **${session.sessionDate}** — ${session.template}, ${session.discipline ?? "discipline not recorded"} (${session.source})`
-    );
+    blocks.push({
+      kind: "para",
+      text: `${session.sessionDate} — ${session.template}, ${
+        session.discipline ?? "discipline not recorded"
+      } (${session.source})`,
+    });
   }
 
-  return lines.join("\n");
+  return blocks;
 }
 
 function readme(
@@ -356,8 +419,8 @@ function readme(
     "## What is in here",
     "",
     "- `sessions.json` — everything, structured. Use this for anything automated.",
-    "- `<CLIENT-CODE>/_client.md` — that client's status and a list of their sessions.",
-    "- `<CLIENT-CODE>/YYYY-MM-DD.md` — one file per session, ready to read or paste.",
+    "- `<CLIENT-CODE>/_client.docx` — that client's status and a list of their sessions.",
+    "- `<CLIENT-CODE>/YYYY-MM-DD.docx` — one Word file per session, ready to read or paste.",
     "",
     "Each session carries its **date**, the **discipline** of the clinician who",
     "recorded it, the template used, and the client's status. A note written from",

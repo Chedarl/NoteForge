@@ -71,7 +71,9 @@ export interface FieldAgentSession {
  * telling a stranger *which* of those it was is telling them whether they have
  * found a real link.
  */
-export async function resolveFieldLink(token: string): Promise<FieldAgentSession | null> {
+export async function resolveFieldLink(
+  token: string,
+): Promise<FieldAgentSession | null> {
   if (!TOKEN_PATTERN.test(token)) return null;
 
   const link = await prisma.fieldLink.findUnique({
@@ -139,20 +141,40 @@ export async function createFieldAgent(input: {
    * is taking responsibility for what comes back.
    */
   supervisorId?: string;
+  /**
+   * Reissue rather than create: mint a link for a worker who already exists.
+   *
+   * Without this, "send me my link again" meant creating a second `User` with
+   * the same person's name on it, and the roster filled up with duplicates of
+   * people who had simply lost a message. Everything that worker has already
+   * submitted hangs off their id, so keeping it is what makes a reissue a
+   * replacement of the credential rather than a replacement of the person.
+   */
+  existingAgentId?: string;
 }): Promise<MintedLink> {
   const token = mintFieldToken();
 
   const { agentId, linkId } = await prisma.$transaction(async (tx) => {
-    const agent = await tx.user.create({
-      data: {
-        practiceId: input.practiceId,
-        fullName: input.fullName,
-        role: "FIELD_AGENT",
-        discipline: input.discipline,
-        authUserId: null,
-        email: null,
-      },
-    });
+    const agent = input.existingAgentId
+      ? // Re-read inside the transaction and inside the practice, so a caller
+        // cannot hand in an id belonging to another tenant.
+        await tx.user.findFirstOrThrow({
+          where: {
+            id: input.existingAgentId,
+            practiceId: input.practiceId,
+            role: "FIELD_AGENT",
+          },
+        })
+      : await tx.user.create({
+          data: {
+            practiceId: input.practiceId,
+            fullName: input.fullName,
+            role: "FIELD_AGENT",
+            discipline: input.discipline,
+            authUserId: null,
+            email: null,
+          },
+        });
     const link = await tx.fieldLink.create({
       data: {
         practiceId: input.practiceId,
@@ -169,7 +191,10 @@ export async function createFieldAgent(input: {
 }
 
 /** Withdraws one person's access without touching anybody else's. */
-export async function revokeFieldLink(linkId: string, practiceId: string): Promise<boolean> {
+export async function revokeFieldLink(
+  linkId: string,
+  practiceId: string,
+): Promise<boolean> {
   const result = await prisma.fieldLink.updateMany({
     where: { id: linkId, practiceId, revokedAt: null },
     data: { revokedAt: new Date() },

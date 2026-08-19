@@ -7,6 +7,7 @@ import { toE164, PHONE_PROBLEM_MESSAGE } from "@/lib/sharing/phone";
 import { storeSharedPdf, whatsappHandoff } from "@/lib/sharing/store";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { siteUrl } from "@/lib/email/send";
+import { emailShareLink } from "@/lib/sharing/email";
 import { logSafe } from "@/lib/redact";
 
 export interface ShareState {
@@ -17,7 +18,49 @@ export interface ShareState {
     expiresAt: string;
     /** Six digits, shown once. Null when the sender chose to send it unlocked. */
     passcode: string | null;
+    /**
+     * Where it was emailed, when an address was given. Null when none was.
+     *
+     * Reported separately from `error` on purpose: a failed email must not
+     * discard a link that was created successfully and still works. The sender
+     * needs to be told the email did not go *and* still be handed the link.
+     */
+    emailedTo?: string | null;
+    emailProblem?: string | null;
   };
+}
+
+/**
+ * Emails the link, if an address was given.
+ *
+ * Returns what to show rather than throwing, because by the time this runs the
+ * PDF is stored and the share row exists. Losing that because a mail server was
+ * unreachable would be the worst of both — a link nobody can see, already
+ * counted against the rate limit.
+ */
+async function deliverByEmail(args: {
+  formData: FormData;
+  downloadUrl: string;
+  ttlHours: number;
+  locked: boolean;
+  senderName: string;
+  practiceName: string;
+}): Promise<{ emailedTo: string | null; emailProblem: string | null }> {
+  const address = String(args.formData.get("email") ?? "").trim();
+  if (!address) return { emailedTo: null, emailProblem: null };
+
+  const result = await emailShareLink({
+    to: address,
+    downloadUrl: args.downloadUrl,
+    ttlHours: args.ttlHours,
+    locked: args.locked,
+    senderName: args.senderName,
+    practiceName: args.practiceName,
+  });
+
+  return result.ok
+    ? { emailedTo: address, emailProblem: null }
+    : { emailedTo: null, emailProblem: result.error ?? "The email could not be sent." };
 }
 
 export async function createWhatsAppShare(
@@ -49,7 +92,7 @@ export async function createWhatsAppShare(
       submittedBy: { select: { fullName: true } },
       pages: {
         orderBy: { pageNumber: "asc" },
-        select: { pageNumber: true, verifiedText: true, ocrText: true },
+        select: { pageNumber: true, verifiedTextEnc: true, ocrTextEnc: true },
       },
     },
   });
@@ -138,12 +181,22 @@ export async function createWhatsAppShare(
     lead: "A secure NoteForge PDF is ready for note production.",
   });
 
+  const mail = await deliverByEmail({
+    formData,
+    downloadUrl,
+    ttlHours: stored.share.ttlHours,
+    locked: stored.share.passcode !== null,
+    senderName: user.fullName,
+    practiceName: submission.practice.name,
+  });
+
   return {
     success: {
       whatsappUrl,
       downloadUrl,
       expiresAt: stored.share.expiresAt.toISOString(),
       passcode: stored.share.passcode,
+      ...mail,
     },
   };
 }
@@ -249,6 +302,13 @@ export async function createRoundWhatsAppShare(
   });
   if (!stored.ok) return { error: stored.error };
 
+  const practiceName = (
+    await prisma.practice.findUnique({
+      where: { id: user.practiceId },
+      select: { name: true },
+    })
+  )?.name;
+
   const { whatsappUrl, downloadUrl } = whatsappHandoff({
     phone,
     siteUrl: siteUrl(),
@@ -260,12 +320,25 @@ export async function createRoundWhatsAppShare(
         : `A secure NoteForge PDF with ${submissions.length} client updates is ready for note production.`,
   });
 
+  const mail = await deliverByEmail({
+    formData,
+    downloadUrl,
+    ttlHours: stored.share.ttlHours,
+    locked: stored.share.passcode !== null,
+    senderName: user.fullName,
+    // The round query selects only ids and client codes, so the practice name
+    // comes from the sender's own row rather than a second query for a string
+    // that only appears in one line of an email.
+    practiceName: practiceName ?? "your practice",
+  });
+
   return {
     success: {
       whatsappUrl,
       downloadUrl,
       expiresAt: stored.share.expiresAt.toISOString(),
       passcode: stored.share.passcode,
+      ...mail,
     },
   };
 }

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { openJson, openText } from "@/lib/crypto/text";
 import { hoursBetween } from "@/lib/utils";
 import { assessCompleteness } from "@/lib/intake/templates";
 import type { TemplateKind } from "@prisma/client";
@@ -77,7 +78,7 @@ export async function operationalMetrics(
         createdAt: true,
         encounterDate: true,
         templateKind: true,
-        fields: true,
+        fieldsEnc: true,
         kind: true,
       },
     }),
@@ -95,7 +96,7 @@ export async function operationalMetrics(
     }),
     prisma.submissionPage.findMany({
       where: { submission: { practiceId }, createdAt: { gte: since } },
-      select: { ocrText: true, verifiedText: true, ocrConfidence: true },
+      select: { ocrTextEnc: true, verifiedTextEnc: true, ocrConfidence: true },
     }),
   ]);
 
@@ -119,7 +120,7 @@ export async function operationalMetrics(
     (s) =>
       assessCompleteness(
         s.templateKind as TemplateKind,
-        (s.fields ?? {}) as Record<string, unknown>,
+        openJson(s.fieldsEnc),
         // The encounter's own date, not today. Without it, a field made
         // required this month is scored against every submission ever filed and
         // this figure falls off a cliff overnight — which reads as a collapse in
@@ -130,9 +131,11 @@ export async function operationalMetrics(
 
   // "First pass" = OCR was trusted verbatim. Compared after trimming, because a
   // stray newline is not a human disagreeing with the machine.
-  const verifiedPages = pages.filter((p) => p.verifiedText !== null && p.ocrText !== null);
+  const verifiedPages = pages.filter(
+    (p) => p.verifiedTextEnc !== null && p.ocrTextEnc !== null
+  );
   const untouched = verifiedPages.filter(
-    (p) => (p.verifiedText ?? "").trim() === (p.ocrText ?? "").trim()
+    (p) => (openText(p.verifiedTextEnc) ?? "").trim() === (openText(p.ocrTextEnc) ?? "").trim()
   ).length;
 
   const handoverDays = submissions.map(

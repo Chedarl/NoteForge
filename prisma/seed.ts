@@ -25,6 +25,8 @@ import {
   type Discipline,
   type TemplateKind,
 } from "@prisma/client";
+import { TEMPLATES } from "../src/lib/intake/templates";
+import { sealText, sealJson, openJson } from "../src/lib/crypto/text";
 import { createClient } from "@supabase/supabase-js";
 import { createCipheriv, createHash, randomBytes } from "crypto";
 
@@ -220,7 +222,9 @@ async function main() {
         initials: `${spec.given[0]}.${spec.familyInitial}.`,
         birthYear: spec.birthYear,
         status: spec.status,
-        statusReason: spec.reason ?? null,
+        // `sealText` returns "" for an absent value, and `"" ?? null` is "" —
+        // so the nullable column filled with empty strings instead of nulls.
+        statusReasonEnc: spec.reason ? sealText(spec.reason) : null,
         statusChangedAt: spec.status === "ACTIVE" ? daysAgo(200) : daysAgo(30),
         primaryTherapistId: spec.therapistId,
         lastEncounterAt: spec.status === "ACTIVE" ? daysAgo(6) : daysAgo(45),
@@ -245,7 +249,7 @@ async function main() {
             clientId: client.id,
             fromStatus: "ACTIVE",
             toStatus: spec.status,
-            reason: spec.reason ?? null,
+            reasonEnc: spec.reason ? sealText(spec.reason) : null,
             source: "THERAPIST_UPDATE",
             changedById: spec.therapistId,
             createdAt: daysAgo(30),
@@ -313,6 +317,29 @@ async function seedSubmissions(ctx: {
     kind?: "STRUCTURED" | "PHOTO";
     discipline?: Discipline;
   }) => {
+    /*
+     * Every key must be a real field id for this template.
+     *
+     * These were keyed by *label* — "Subjective", "Plan" — while every reader in
+     * the product looks them up by id. So the seeded SOAP encounters exported
+     * with "not recorded" under every single heading, and the demo anybody would
+     * show a customer was an empty document. Nothing failed: the rows were
+     * written, the ZIP was built, the JSON was valid, and the field map was
+     * silently empty.
+     *
+     * Throwing here rather than warning, because a seed that produces data the
+     * product cannot read is worse than a seed that does not run.
+     */
+    const known = new Set(TEMPLATES[spec.templateKind].fields.map((f) => f.id));
+    for (const key of Object.keys(spec.fields)) {
+      if (!known.has(key)) {
+        throw new Error(
+          `Seed: "${key}" is not a field of ${spec.templateKind}. ` +
+            `Use the field id, not its label. Known ids: ${[...known].join(", ")}`
+        );
+      }
+    }
+
     // Mirrors flattenFields() in src/lib/intake/templates.ts: the stored text is
     // what duplicate detection compares, so it has to look like what the real
     // intake path produces, not like a dump of the object.
@@ -331,10 +358,10 @@ async function seedSubmissions(ctx: {
           (spec.submittedById === nurseId ? "NURSE_PRACTITIONER" : "SOCIAL_CASE_WORKER"),
         state: spec.state ?? "QUEUED",
         encounterDate: daysAgo(spec.encounterDaysAgo),
-        fields: spec.fields,
-        rawText: text,
+        fieldsEnc: sealJson(spec.fields) as object,
+        rawTextEnc: sealText(text),
         contentHash: hashOf(text),
-        normalizedText: normalized(text),
+        normalizedTextEnc: sealText(normalized(text)),
         createdAt: daysAgo(spec.createdDaysAgo),
       },
     });
@@ -350,10 +377,10 @@ async function seedSubmissions(ctx: {
       encounterDaysAgo: 30 - i * 6,
       createdDaysAgo: 29 - i * 6,
       fields: {
-        Subjective: `Client reported a steadier week. Sleep improved to around six hours. Described one difficult conversation at work on ${["Monday", "Tuesday", "Thursday", "Friday"][i]} that they managed without avoiding it.`,
-        Objective: "Attended on time, engaged throughout, affect brighter than last session. No indicators of risk raised or observed.",
-        Assessment: "Continued gradual improvement in mood and daytime functioning. Behavioural activation is holding.",
-        Plan: "Continue weekly. Keep the sleep log. Review the work situation next session.",
+        subjective: `Client reported a steadier week. Sleep improved to around six hours. Described one difficult conversation at work on ${["Monday", "Tuesday", "Thursday", "Friday"][i]} that they managed without avoiding it.`,
+        objective: "Attended on time, engaged throughout, affect brighter than last session. No indicators of risk raised or observed.",
+        assessment: "Continued gradual improvement in mood and daytime functioning. Behavioural activation is holding.",
+        plan: "Continue weekly. Keep the sleep log. Review the work situation next session.",
       },
       state: "DONE",
     });
@@ -364,7 +391,7 @@ async function seedSubmissions(ctx: {
         clientId: submission.clientId,
         submissionId: submission.id,
         templateKind: "SOAP",
-        body: submission.fields as object,
+        bodyEnc: sealJson(openJson(submission.fieldsEnc)) as object,
         state: "DELIVERED",
         authoredById: specialistId,
         signedById: specialistId,
@@ -417,8 +444,7 @@ async function seedSubmissions(ctx: {
       relatedSubmissionId: original.id,
       kind: "NEAR_DUPLICATE",
       score: 0.86,
-      detail:
-        "86% of the meaningful terms also appear in a submission for this client from three days earlier, for the same encounter date.",
+      detailEnc: sealText("86% of the meaningful terms also appear in a submission for this client from three days earlier, for the same encounter date."),
       createdAt: daysAgo(5),
     },
   });
@@ -460,8 +486,7 @@ async function seedSubmissions(ctx: {
       relatedSubmissionId: riskA.id,
       kind: "CONFLICT",
       score: 0.79,
-      detail:
-        "Possible contradiction (risk): the earlier submission records suicidal ideation denied on direct questioning, this one records passive ideation present most days over the same period.",
+      detailEnc: sealText("Possible contradiction (risk): the earlier submission records suicidal ideation denied on direct questioning, this one records passive ideation present most days over the same period."),
       createdAt: daysAgo(2),
     },
   });
@@ -487,7 +512,7 @@ async function seedSubmissions(ctx: {
     data: {
       submissionId: blocked.id,
       kind: "STATUS_BLOCK",
-      detail: "Submitted against a client marked Deceased since 30 days ago.",
+      detailEnc: sealText("Submitted against a client marked Deceased since 30 days ago."),
       createdAt: daysAgo(12),
     },
   });

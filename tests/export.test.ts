@@ -18,6 +18,7 @@ import { buildExport } from "@/lib/export/bundle";
 import { summariseChanges } from "@/lib/export/changes";
 import { assessCompleteness, encounterTypeOf, TEMPLATES } from "@/lib/intake/templates";
 import { prisma } from "@/lib/prisma";
+import { sealText } from "@/lib/crypto/text";
 import { makeFixture, nursingFields, type Fixture } from "./_setup";
 
 let f: Fixture;
@@ -171,7 +172,7 @@ describe("the ZIP bundle", () => {
         clientCode: `${f.practice.code}-BLK`,
         initials: "B.K.",
         status: "DISCHARGED",
-        statusReason: "For the export test",
+        statusReasonEnc: sealText("For the export test"),
         primaryTherapistId: f.therapist.id,
       },
     });

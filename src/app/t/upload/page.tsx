@@ -4,12 +4,14 @@ import { requireRole } from "@/lib/auth/session";
 import PhotoUpload from "@/components/therapist/PhotoUpload";
 import { readerConfigured } from "@/lib/ai/reader";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { EmptyState } from "@/components/shared/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function UploadPage() {
   const user = await requireRole(["THERAPIST", "OWNER"]);
+  const naming = await displayPolicyFor(user.practiceId);
 
   const [clients, practice] = await Promise.all([
     prisma.client.findMany({
@@ -60,7 +62,7 @@ export default async function UploadPage() {
         clients={toPickList(clients).clients.map((client) => ({
           id: client.id,
           clientCode: client.clientCode,
-          label: identityOf(client).displayName ?? client.initials,
+          label: identityOf(naming, client).displayName ?? client.initials,
           status: client.status,
         }))}
         defaultWhatsApp={practice?.noteWriterWhatsApp ?? ""}

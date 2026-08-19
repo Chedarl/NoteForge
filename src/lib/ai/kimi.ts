@@ -64,6 +64,36 @@ const DEFAULT_TIMEOUT_MS = 45_000;
  */
 export const KEY_VARIABLES = ["KIMI_API_KEY", "MOONSHOT_API_KEY"] as const;
 
+/**
+ * The off switch, and why removing the key is not one.
+ *
+ * `docs/BAA.md` names turning this vendor off as the first step before any
+ * money is spent on agreements, because it is the party that receives the most
+ * sensitive material — photographed notes and full submission text — and it
+ * will not sign a BAA. The advice given was "unset `KIMI_API_KEY`". That advice
+ * is **wrong on its own**: two variable names are read, so a deployment with
+ * `MOONSHOT_API_KEY` also set stays fully live while the operator believes the
+ * vendor is gone. Nothing on any screen would have contradicted them.
+ *
+ * Turning something off by removing things is fallible in a way turning it off
+ * by *asserting* is not: you have to find every variable that might carry a key,
+ * including one somebody adds next month. `AI_DISABLED=1` is one variable to add
+ * and it wins over every key, present or future.
+ *
+ * It is checked in `kimiKeySource`, which is the single place a key is resolved,
+ * so `kimiConfigured()`, `kimiJson()` and the probe endpoint all agree. There is
+ * no path to the model that does not pass through here.
+ */
+export const AI_DISABLE_VARIABLE = "AI_DISABLED";
+
+/** True when this deployment has been told not to talk to a model vendor. */
+export function aiDisabled(): boolean {
+  const raw = (process.env[AI_DISABLE_VARIABLE] ?? "").trim().toLowerCase();
+  // Accepting the three things somebody types into a dashboard field. "0",
+  // "false" and empty all mean not disabled, which is the default.
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
 /** Settings that are meant to hold a name, so the warning below can ignore them. */
 const KNOWN_SETTINGS = new Set(["KIMI_MODEL", "KIMI_BASE_URL", "KIMI_REASONING_EFFORT"]);
 
@@ -81,6 +111,15 @@ export function kimiKeySource(): {
   variable: (typeof KEY_VARIABLES)[number] | null;
   fingerprint: string | null;
 } {
+  /*
+   * The switch beats every key. Reported as "no key" to every caller, so each
+   * one degrades down the path it already has rather than needing a second
+   * concept — but `aiDisabled()` stays separately readable, because "turned off
+   * on purpose" and "nobody configured it" are very different things to see on
+   * a health check.
+   */
+  if (aiDisabled()) return { key: null, variable: null, fingerprint: null };
+
   for (const variable of KEY_VARIABLES) {
     const raw = process.env[variable] || "";
     /*

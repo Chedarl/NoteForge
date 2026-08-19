@@ -46,6 +46,26 @@ export default function SendRoundOnWhatsApp({
 
       <CallingCodeField defaultPhone={defaultPhone} label="Send to" />
 
+      {/*
+        The same link by email, for a note writer who works from an inbox rather
+        than a phone. A link, never an attachment: an attached PDF is an
+        unrevokable copy of a clinical narrative in a mailbox nobody here
+        controls, while the link expires, counts its downloads and can be
+        withdrawn.
+      */}
+      <label className="block">
+        <span className="block text-xs font-medium text-slate-700">
+          Also email it <span className="font-normal text-slate-500">(optional)</span>
+        </span>
+        <input
+          type="email"
+          name="email"
+          autoComplete="off"
+          placeholder="notes@yourpractice.com"
+          className="nf-field mt-1 w-full"
+        />
+      </label>
+
       <label className="flex cursor-pointer items-start gap-2.5 text-sm text-slate-700">
         <input
           name="acknowledged"
@@ -65,6 +85,16 @@ export default function SendRoundOnWhatsApp({
           {state.error}
         </p>
       )}
+
+      {/* Separate from `error`: the link exists and works even if the mail did not. */}
+      {state.success?.emailedTo ? (
+        <p className="text-sm text-emerald-700">Emailed to {state.success.emailedTo}.</p>
+      ) : null}
+      {state.success?.emailProblem ? (
+        <p role="alert" className="text-sm text-amber-700">
+          {state.success.emailProblem}
+        </p>
+      ) : null}
 
       {state.success && (
         <a

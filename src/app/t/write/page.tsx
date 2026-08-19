@@ -2,6 +2,7 @@ import { requireRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { PICKER_TAKE, toPickList } from "@/lib/clients/pickList";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { whatsappConfigured } from "@/lib/whatsapp/send";
 import { QuickUpdate, type QuickClient } from "@/components/therapist/QuickUpdate";
 
@@ -17,6 +18,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function WritePage() {
   const user = await requireRole(["THERAPIST", "OWNER"]);
+  const naming = await displayPolicyFor(user.practiceId);
 
   const clients = await prisma.client.findMany({
     where: {
@@ -58,7 +60,7 @@ export default async function WritePage() {
   // right everywhere else but would put "RVN-0142 · Smith J" into a box the
   // clinician is meant to type a name into.
   const options: QuickClient[] = pickable.map((client) => {
-    const identity = identityOf(client);
+    const identity = identityOf(naming, client);
     return {
       id: client.id,
       label: identity.displayName ?? client.initials,
@@ -67,7 +69,7 @@ export default async function WritePage() {
   });
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="max-w-2xl">
       <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
         Write an update
       </h1>

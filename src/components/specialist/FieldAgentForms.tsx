@@ -15,7 +15,13 @@ import ShareFieldLink from "@/components/shared/ShareFieldLink";
  * a settings page is a credential that leaks the first time somebody shares
  * their screen.
  */
-export function AddFieldAgentForm({ clinicianName = "your clinician" }: { clinicianName?: string }) {
+export function AddFieldAgentForm({
+  clinicianName = "your clinician",
+  linksReachable = true,
+}: {
+  clinicianName?: string;
+  linksReachable?: boolean;
+}) {
   const [state, action, pending] = useActionState<AgentState, FormData>(addFieldAgent, {});
 
   return (
@@ -59,6 +65,7 @@ export function AddFieldAgentForm({ clinicianName = "your clinician" }: { clinic
             workerName={state.created.name}
             url={state.created.url}
             clinicianName={clinicianName}
+            linksReachable={linksReachable}
           />
         </div>
       ) : null}

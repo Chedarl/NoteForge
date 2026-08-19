@@ -62,6 +62,18 @@ export default function ShareOnWhatsApp({
           This is the only time it is shown. It is not stored anywhere it can be read back.
         </p>
 
+        {state.success.emailedTo ? (
+          <p className="mt-3 text-center text-xs text-emerald-700">
+            The link was emailed to {state.success.emailedTo}. The code was not — pass it on
+            yourself.
+          </p>
+        ) : null}
+        {state.success.emailProblem ? (
+          <p role="alert" className="mt-3 text-center text-xs text-amber-700">
+            {state.success.emailProblem}
+          </p>
+        ) : null}
+
         <a
           href={state.success.whatsappUrl}
           className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#087f8c] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#066b76]"
@@ -96,6 +108,31 @@ export default function ShareOnWhatsApp({
           label="Recipient&rsquo;s WhatsApp number"
         />
 
+        {/*
+          Email is an alternative route for the same link, not a second copy of
+          the document. What lands in the inbox is a URL that expires, counts its
+          downloads and can be withdrawn — an attached PDF would be an
+          unrevokable copy of a clinical narrative sitting in a mailbox nobody
+          here controls. Filled in or left blank; the WhatsApp path is unchanged
+          either way.
+        */}
+        <label className="block">
+          <span className="block text-xs font-medium text-slate-700">
+            Also email it <span className="font-normal text-slate-500">(optional)</span>
+          </span>
+          <input
+            type="email"
+            name="email"
+            autoComplete="off"
+            placeholder="notes@yourpractice.com"
+            className="nf-field mt-1 w-full"
+          />
+          <span className="mt-1 block text-[0.7rem] leading-relaxed text-slate-500">
+            They receive the same expiring link, never the file itself. The code is never
+            in the email.
+          </span>
+        </label>
+
         <label className="flex items-start gap-2 text-xs leading-relaxed text-slate-600">
           <input
             name="unlocked"
@@ -116,6 +153,21 @@ export default function ShareOnWhatsApp({
         </label>
 
         {state.error ? <p role="alert" className="text-xs text-rose-700">{state.error}</p> : null}
+
+        {/*
+          Said separately from `error`, because the link was created and works.
+          Reporting a failed email as a failed share would send somebody back to
+          make a second link they do not need.
+        */}
+        {state.success?.emailedTo ? (
+          <p className="text-xs text-emerald-700">Emailed to {state.success.emailedTo}.</p>
+        ) : null}
+        {state.success?.emailProblem ? (
+          <p role="alert" className="text-xs text-amber-700">
+            {state.success.emailProblem}
+          </p>
+        ) : null}
+
         {state.success ? (
           <a
             href={state.success.whatsappUrl}

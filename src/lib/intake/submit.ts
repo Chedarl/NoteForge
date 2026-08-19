@@ -6,6 +6,7 @@ import { writeAudit } from "@/lib/audit";
 import { sendMail, siteUrl } from "@/lib/email/send";
 import { checkClientAcceptsSubmissions, STATUS_LABEL } from "@/lib/clients/guard";
 import { contentHash, normalizeForCompare } from "@/lib/dedupe/normalize";
+import { sealText, sealJson, openText } from "@/lib/crypto/text";
 import { detectDuplicates, persistFlags } from "@/lib/dedupe/detect";
 import { flattenFields } from "@/lib/intake/templates";
 import type { Discipline, SubmissionKind, TemplateKind, User } from "@prisma/client";
@@ -97,13 +98,25 @@ export async function submitEncounter(input: SubmitInput): Promise<SubmitResult>
     templateKind: input.templateKind,
     discipline: input.discipline ?? input.submittedBy.discipline ?? null,
     encounterDate: input.encounterDate,
-    // Cast at the single point where answers enter the database, rather than
-    // widening the domain type — the shape is validated by the template the
-    // caller read the form against.
-    fields: input.fields as Prisma.InputJsonObject,
-    rawText: text,
+    /*
+     * Sealed here, at the single point where answers enter the database.
+     *
+     * Rule 0 is what makes this one line enough: every intake surface goes
+     * through `submitEncounter`, so there is no second place a clinical
+     * narrative can be written in the clear. If a path is ever added that
+     * writes a `Submission` directly it will bypass this exactly as it would
+     * bypass the guardrail — which is the reason rule 0 exists.
+     *
+     * `contentHash` is deliberately still taken over the **plaintext**: it is
+     * the exact-match layer of the duplicate detector and it has to stay
+     * comparable with rows written before encryption. A digest of a whole
+     * document's sorted unique token bag is not invertible, so keying it would
+     * cost compatibility for no real gain.
+     */
+    fieldsEnc: sealJson(input.fields) as unknown as Prisma.InputJsonObject,
+    rawTextEnc: sealText(text),
     contentHash: contentHash(text),
-    normalizedText: normalizeForCompare(text),
+    normalizedTextEnc: sealText(normalizeForCompare(text)),
   };
 
   // ── Refused, but recorded ────────────────────────────────────────────────
@@ -115,9 +128,11 @@ export async function submitEncounter(input: SubmitInput): Promise<SubmitResult>
       data: {
         submissionId: blocked.id,
         kind: "STATUS_BLOCK",
-        detail: `Submitted against a client marked ${STATUS_LABEL[verdict.status]}${
-          verdict.since ? ` since ${verdict.since.toISOString().slice(0, 10)}` : ""
-        }.`,
+        detailEnc: sealText(
+          `Submitted against a client marked ${STATUS_LABEL[verdict.status]}${
+            verdict.since ? ` since ${verdict.since.toISOString().slice(0, 10)}` : ""
+          }.`
+        ),
       },
     });
     await writeAudit({
@@ -223,17 +238,19 @@ export async function finishVerification(submissionId: string): Promise<boolean>
   });
   if (!submission) return false;
 
+  // The page transcripts are sealed too, so they are opened before being
+  // joined and the joined result is sealed again as one value.
   const text = submission.pages
-    .map((page) => page.verifiedText ?? "")
+    .map((page) => openText(page.verifiedTextEnc) ?? "")
     .filter((t) => t.trim())
     .join("\n\n");
 
   const updated = await prisma.submission.update({
     where: { id: submissionId },
     data: {
-      rawText: text,
+      rawTextEnc: sealText(text),
       contentHash: contentHash(text),
-      normalizedText: normalizeForCompare(text),
+      normalizedTextEnc: sealText(normalizeForCompare(text)),
       state: "QUEUED",
     },
   });

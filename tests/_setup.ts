@@ -13,6 +13,7 @@
  */
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { sealText } from "@/lib/crypto/text";
 import type { Practice, User, Client, ClientStatus } from "@prisma/client";
 
 export interface Fixture {
@@ -69,7 +70,11 @@ export async function makeClient(
       clientCode,
       initials: "T.C.",
       status,
-      statusReason: status === "ACTIVE" ? null : "Set by a test",
+      // Sealed, and the condition tests the *status* — an earlier version
+      // sealed the status and compared the ciphertext to "ACTIVE", which never
+      // matched, so every fixture stored a plaintext reason. Nothing asserted
+      // on it, so nothing failed.
+      statusReasonEnc: status === "ACTIVE" ? null : sealText("Set by a test"),
       primaryTherapistId: therapistId,
     },
   });

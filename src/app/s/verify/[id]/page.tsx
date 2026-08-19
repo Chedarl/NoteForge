@@ -5,12 +5,16 @@ import { requireRole } from "@/lib/auth/session";
 import VerifyWorkspace from "@/components/specialist/VerifyWorkspace";
 import { StatusBadge } from "@/components/shared/ui";
 import { identityOf } from "@/lib/clients/identity";
+import { openText } from "@/lib/crypto/text";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { fmtDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function VerifyPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
+
   const { id } = await params;
 
   const submission = await prisma.submission.findFirst({
@@ -23,6 +27,9 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
   });
   if (!submission) notFound();
 
+  // Opened once — it is rendered twice below.
+  const rawText = openText(submission.rawTextEnc);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -31,7 +38,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
         </Link>
         <h1 className="text-lg font-semibold">{submission.client.clientCode}</h1>
         <span className="text-sm text-slate-500">
-          {identityOf(submission.client).displayName ?? submission.client.initials}
+          {identityOf(naming, submission.client).displayName ?? submission.client.initials}
         </span>
         <StatusBadge status={submission.client.status} />
         <span className="text-sm text-slate-500">
@@ -39,10 +46,10 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
         </span>
       </div>
 
-      {submission.rawText ? (
+      {rawText ? (
         <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm">
           <span className="font-medium text-sky-900">Note from the therapist: </span>
-          <span className="text-sky-800">{submission.rawText}</span>
+          <span className="text-sky-800">{rawText}</span>
         </div>
       ) : null}
 
@@ -52,11 +59,11 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
           id: page.id,
           pageNumber: page.pageNumber,
           imageUrl: `/api/media/${page.storagePath}`,
-          ocrText: page.ocrText,
+          ocrText: openText(page.ocrTextEnc),
           ocrConfidence: page.ocrConfidence,
           ocrProvider: page.ocrProvider,
           blocks: (page.ocrBlocks as { text: string; confidence: number }[] | null) ?? null,
-          verifiedText: page.verifiedText,
+          verifiedText: openText(page.verifiedTextEnc),
         }))}
       />
     </div>

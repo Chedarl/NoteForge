@@ -10,6 +10,8 @@ import NoteEditor from "@/components/specialist/NoteEditor";
 import MarkProcessed from "@/components/specialist/MarkProcessed";
 import FlagResolver from "@/components/specialist/FlagResolver";
 import { identityOf } from "@/lib/clients/identity";
+import { openJson, openText } from "@/lib/crypto/text";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import type { TemplateKind } from "@prisma/client";
@@ -28,6 +30,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function NotePage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
   const needs = await practiceNeeds(user.practiceId);
   const { id } = await params;
 
@@ -49,7 +52,7 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
         where: { resolution: "OPEN" },
         include: {
           relatedSubmission: {
-            select: { id: true, encounterDate: true, rawText: true, createdAt: true },
+            select: { id: true, encounterDate: true, rawTextEnc: true, createdAt: true },
           },
         },
       },
@@ -67,13 +70,13 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
     },
     orderBy: { createdAt: "desc" },
     take: 3,
-    select: { id: true, createdAt: true, templateKind: true, body: true },
+    select: { id: true, createdAt: true, templateKind: true, bodyEnc: true },
   });
 
   const template = TEMPLATES[submission.note.templateKind as TemplateKind];
   const sourceText =
     submission.kind === "PHOTO"
-      ? submission.pages.map((p) => p.verifiedText ?? "").filter(Boolean).join("\n\n")
+      ? submission.pages.map((p) => openText(p.verifiedTextEnc) ?? "").filter(Boolean).join("\n\n")
       : "";
 
   return (
@@ -84,7 +87,7 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
         </Link>
         <h1 className="text-lg font-semibold">{submission.client.clientCode}</h1>
         <span className="text-sm text-slate-500">
-          {identityOf(submission.client).displayName ?? submission.client.initials}
+          {identityOf(naming, submission.client).displayName ?? submission.client.initials}
         </span>
         <StatusBadge status={submission.client.status} />
         {submission.discipline ? (
@@ -105,7 +108,9 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           <strong>This client is {submission.client.status.toLowerCase().replace("_", " ")}.</strong>{" "}
           Since {fmtDate(submission.client.statusChangedAt)}
-          {submission.client.statusReason ? ` — ${submission.client.statusReason}` : ""}. Check
+          {openText(submission.client.statusReasonEnc)
+            ? ` — ${openText(submission.client.statusReasonEnc)}`
+            : ""}. Check
           this note belongs to a session that predates the change before you write it up.
         </div>
       ) : null}
@@ -139,14 +144,14 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
               key={flag.id}
               flagId={flag.id}
               kind={flag.kind}
-              detail={flag.detail}
+              detail={openText(flag.detailEnc)}
               score={flag.score}
               related={
                 flag.relatedSubmission
                   ? {
                       id: flag.relatedSubmission.id,
                       encounterDate: fmtDate(flag.relatedSubmission.encounterDate),
-                      excerpt: flag.relatedSubmission.rawText.slice(0, 900),
+                      excerpt: (openText(flag.relatedSubmission.rawTextEnc) ?? "").slice(0, 900),
                     }
                   : null
               }
@@ -183,7 +188,7 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
                           "a,b" with no spacing and an object gave
                           "[object Object]". */}
                       {renderFieldValue(
-                        (submission.fields as Record<string, unknown>)[field.id],
+                        openJson(submission.fieldsEnc)[field.id],
                         field
                       ) || "—"}
                     </dd>
@@ -210,8 +215,8 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
                     {event.fromStatus ? `${event.fromStatus} → ` : ""}
                     <strong className="font-medium">{event.toStatus}</strong>
                   </span>
-                  {event.reason ? (
-                    <span className="w-full text-xs text-slate-500">{event.reason}</span>
+                  {openText(event.reasonEnc) ? (
+                    <span className="w-full text-xs text-slate-500">{openText(event.reasonEnc)}</span>
                   ) : null}
                 </li>
               ))}
@@ -232,7 +237,7 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
                       {fmtDateTime(prev.createdAt)} · {prev.templateKind}
                     </div>
                     <p className="prose-note mt-0.5 line-clamp-4 text-sm text-slate-700">
-                      {Object.values(prev.body as Record<string, string>)
+                      {Object.values(openJson<Record<string, string>>(prev.bodyEnc))
                         .filter(Boolean)
                         .join(" · ")}
                     </p>
@@ -249,7 +254,7 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
           noteId={submission.note.id}
           templateKind={submission.note.templateKind as TemplateKind}
           needs={needs}
-        initialBody={submission.note.body as Record<string, string>}
+        initialBody={openJson<Record<string, string>>(submission.note.bodyEnc)}
           state={submission.note.state}
           aiAssisted={submission.note.aiAssisted}
           tags={submission.note.tags.map((t) => ({ id: t.id, kind: t.kind, label: t.label }))}
