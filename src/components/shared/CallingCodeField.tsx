@@ -46,7 +46,7 @@ export default function CallingCodeField({
           name="callingCode"
           defaultValue={code}
           aria-label="Country code"
-          className="w-[9.5rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+          className="w-[8.5rem] shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
         >
           {CALLING_CODES.map((c) => (
             /* `c.label` — "Nigeria (+234)" — and not `+{c.code}`. The list was

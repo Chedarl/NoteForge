@@ -234,6 +234,16 @@ Three things about it are load-bearing:
   code that must travel by a second route is real friction and pretending
   otherwise would just get it turned off everywhere.
 
+**Email carries the same link, never the file.** `src/lib/sharing/email.ts` is
+an alternative route for the handoff, for a note writer who works from an inbox.
+An attached PDF would be an unrevokable copy of a clinical narrative deposited in
+a mailbox nobody here controls — no expiry, no download ceiling, no way to
+withdraw it, and Resend signs no BAA on this tier. The link has all three. The
+message carries no client code and no six-digit run, and `tests/shareEmail.test.ts`
+asserts both against the real composer rather than a copy of it: the obvious
+well-meaning change is to put the code in the email to save the sender a phone
+call, which would make the lock decorative.
+
 The unlock proof is a derived cookie — an HMAC only this server can produce,
 scoped to one link's path — so there is no session table and no second database
 round trip on a route that already does an atomic claim.

@@ -170,7 +170,7 @@ export default function ShareFieldLink({
             value={code}
             onChange={(e) => setCode(e.target.value)}
             aria-label="Country code"
-            className="nf-field w-[9.5rem] shrink-0"
+            className="nf-field w-[8.5rem] shrink-0"
           >
             {/* The country name, not the bare code. See CallingCodeField. */}
             {CALLING_CODES.map((c) => (

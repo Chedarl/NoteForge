@@ -245,6 +245,10 @@ it:
   de-identified one.
 - The tokenised, expiring `/share/[token]` link built alongside this remains available and
   is the safer option; it is one setting away from being the only one.
+- The same link can now be **emailed**, for a note writer who works from an inbox. A
+  link, never an attachment: an attached PDF is an unrevokable copy of a clinical
+  narrative in a mailbox nobody here controls, while the link expires, counts its
+  downloads and can be withdrawn. Nothing clinical and no client code is in the message.
 
 ## Outstanding, as one list
 

@@ -87,7 +87,9 @@ export function normalizeWhatsAppNumber(value: string, callingCode?: string): st
  * failure. Anyone outside it can paste a full `+` number, which always wins.
  */
 export const CALLING_CODES: { code: string; label: string }[] = [
-  { code: "1", label: "United States / Canada (+1)" },
+  // Kept short enough to read inside the select without clipping: the box has
+  // to sit beside a phone number field on a 390px screen.
+  { code: "1", label: "USA / Canada (+1)" },
   { code: "44", label: "United Kingdom (+44)" },
   { code: "237", label: "Cameroon (+237)" },
   { code: "234", label: "Nigeria (+234)" },
