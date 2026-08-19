@@ -508,6 +508,33 @@ The test image is generated rather than committed — a 5x7 bitmap scaled up and
 encoded as greyscale PNG in `src/lib/ai/probe.ts`. A checked-in binary would
 work and would also be unreviewable.
 
+## There are tests now, and they use a real database
+
+`npm test` — Node's built-in runner over `tests/*.test.ts`, no framework added.
+It needs `DATABASE_URL` and runs in CI after the build, because the build is
+what applies migrations to the CI database.
+
+**They talk to PostgreSQL on purpose.** Every bug this codebase has actually
+shipped passed a type check and a build: an export where every section read
+"not recorded", a picker whose answers all hashed identically, a form that wiped
+itself when the server refused it. Mocking Prisma would reproduce that exact
+blind spot — it would assert that the code calls the functions it calls.
+
+Four areas, chosen because they are the ones that must never break: the status
+guardrail, `submitEncounter`, duplicate detection, and the export plus the
+completeness gate. Each file builds its own practice with its own code and
+deletes it afterwards, so files run in any order and nothing depends on the seed.
+
+The suite earned itself on the first run: it asked for a client with status
+`OTHER`, which the specification lists and the requirements marked **DONE**, and
+the insert failed because the enum had five values. That clause had been wrong
+for months behind a green build.
+
+Assert on **content**, not on calls. The ZIP test walks the archive's own local
+file headers and inflates them rather than trusting the builder's report,
+because the two export bugs were both "the function ran and produced the wrong
+bytes".
+
 ## Verify before claiming done
 
 `npm run lint`, `npm run typecheck`, `npm run build` — all three, all clean. Then actually

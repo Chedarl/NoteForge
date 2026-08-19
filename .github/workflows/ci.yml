@@ -31,6 +31,11 @@ jobs:
       SHADOW_DATABASE_URL: postgresql://ci:ci@localhost:5432/shadow?schema=public
       NEXT_PUBLIC_SUPABASE_URL: https://ci.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
+      # Test-only values. The tests exercise column encryption and the share
+      # passcode, both of which fail closed without a key rather than quietly
+      # writing plaintext — which is the behaviour, so they need one here.
+      FIELD_ENCRYPTION_KEY: ci-only-key-not-for-any-real-data-0123456789
+      CONFIRM_LINK_SECRET: ci-only-confirm-secret-0123456789abcdef
 
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +75,17 @@ jobs:
         run: npm run verify:portals
 
       - run: npm run build
+
+      - name: Tests
+        # Against the real PostgreSQL service above, not a mock. Every bug this
+        # codebase has actually shipped — an export where every section read
+        # "not recorded", a picker whose answers all hashed alike, a form that
+        # wiped itself — passed a type check and a build. Mocking Prisma would
+        # reproduce exactly that blind spot.
+        #
+        # Runs after the build because the build is what applies migrations to
+        # the `ci` database.
+        run: npm test
 
       - name: Migrations apply with only the integration's variables
         # The deployment platform may supply POSTGRES_PRISMA_URL and no

@@ -181,6 +181,17 @@ enum ClientStatus {
   DISCHARGED
   TRANSFERRED
   DECEASED
+  /// The specification's sixth option, and the one that was missed.
+  ///
+  /// "Other, with a free-text reason" is in the client's own list and the
+  /// requirements marked it done for months while the enum had five values.
+  /// A characterisation test asked for it by name and the insert failed, which
+  /// is the entire argument for having tests against a real database.
+  ///
+  /// It needs no special handling anywhere: the guard admits only ACTIVE, so
+  /// this refuses by construction, and `statusReason` is already required for
+  /// any non-active status.
+  OTHER
 }
 
 /// The master client record.

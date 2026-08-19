@@ -14,7 +14,8 @@
     "db:sql": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
     "verify:pdf": "node --import tsx scripts/verify-pdf.ts",
     "verify:portals": "node --conditions=react-server --import tsx scripts/verify-portals.ts",
-    "verify:templates": "node --import tsx scripts/verify-templates.ts"
+    "verify:templates": "node --import tsx scripts/verify-templates.ts",
+    "test": "node --conditions=react-server --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
