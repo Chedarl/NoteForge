@@ -4,11 +4,13 @@ import { requireRole } from "@/lib/auth/session";
 import { Card, StatusBadge } from "@/components/shared/ui";
 import { fmtDate, ageLabel } from "@/lib/utils";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClientsPage() {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
 
   const clients = await prisma.client.findMany({
     where: { practiceId: user.practiceId },
@@ -45,7 +47,7 @@ export default async function ClientsPage() {
               {client.clientCode}
             </Link>
             <span className="text-xs text-slate-500">
-              {identityOf(client).displayName ?? client.initials}
+              {identityOf(naming, client).displayName ?? client.initials}
               {client.birthYear ? ` · b. ${client.birthYear}` : ""}
             </span>
             <StatusBadge status={client.status} />

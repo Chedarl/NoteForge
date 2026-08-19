@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth/session";
 import IntakeForm from "@/components/therapist/IntakeForm";
 import { EmptyState } from "@/components/shared/ui";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { templatesFor } from "@/lib/intake/disciplines";
 import { practiceNeeds } from "@/lib/intake/practiceNeeds";
 import { previousSubmissionFor } from "@/lib/intake/previous";
@@ -17,6 +18,7 @@ export default async function NewNotePage({
   searchParams: Promise<{ client?: string; template?: string }>;
 }) {
   const user = await requireRole(["THERAPIST", "OWNER"]);
+  const naming = await displayPolicyFor(user.practiceId);
   const needs = await practiceNeeds(user.practiceId);
   const { client: preselected, template: requestedTemplate } = await searchParams;
 
@@ -113,7 +115,7 @@ export default async function NewNotePage({
         clients={pickable.map((client) => ({
           id: client.id,
           clientCode: client.clientCode,
-          label: identityOf(client).displayName ?? client.initials,
+          label: identityOf(naming, client).displayName ?? client.initials,
           status: client.status,
           statusReason: client.statusReason,
           statusChangedAt: client.statusChangedAt,

@@ -1,7 +1,8 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
-import { identityOf, prepareName, deriveInitials } from "@/lib/clients/identity";
+import { identityOf, MATCH_ONLY, prepareName, deriveInitials } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { fieldCryptoConfigured } from "@/lib/crypto/field";
 import { cleanText } from "@/lib/dedupe/normalize";
 
@@ -105,6 +106,8 @@ export async function resolveClientByName(args: {
   const { givenName, familyInitial } = parseTypedName(typed);
   if (!givenName) return { ok: false, error: "Give the client a name." };
 
+  const policy = await displayPolicyFor(args.practiceId);
+
   const clients = await prisma.client.findMany({
     where: { practiceId: args.practiceId },
     select: {
@@ -121,7 +124,20 @@ export async function resolveClientByName(args: {
   // "smith j." and "Smith  J" are one client rather than three.
   const wanted = cleanText(`${givenName} ${familyInitial ?? ""}`);
   for (const client of clients) {
-    const identity = identityOf(client);
+    /*
+     * `MATCH_ONLY`, deliberately, and the one place in the codebase that uses
+     * it. This loop is deciding *which client a typed name refers to*, not what
+     * to put on a screen. Under a practice's safe-mode policy `identityOf`
+     * returns no name, every comparison below would fail, and a practice that
+     * turned safe mode on would quietly start creating a duplicate client every
+     * time somebody typed a name the system already held — splitting one
+     * person's history across two records, which is a worse outcome for the
+     * record than displaying the name would ever have been.
+     *
+     * The name never leaves this function. What is returned as `label` is
+     * re-derived under the caller's real policy below.
+     */
+    const identity = identityOf(MATCH_ONLY, client);
     if (!identity.displayName) continue;
     if (cleanText(identity.displayName) === wanted) {
       return {
@@ -141,7 +157,7 @@ export async function resolveClientByName(args: {
     (c) => cleanText(c.clientCode) === cleanText(typed)
   );
   if (byCode) {
-    const identity = identityOf(byCode);
+    const identity = identityOf(policy, byCode);
     return {
       ok: true,
       client: {

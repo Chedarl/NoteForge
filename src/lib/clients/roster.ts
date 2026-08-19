@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth/session";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import { renderRosterPdf, type RosterRow } from "@/lib/export/rosterPdf";
 import { sendDocument, sendFailureMessage, whatsappConfigured } from "@/lib/whatsapp/send";
@@ -52,7 +53,9 @@ export async function sendClientRoster(
 ): Promise<RosterState> {
   const user = await requireRole(["THERAPIST", "OWNER"]);
 
-  const includeNames = formData.get("includeNames") === "on";
+  // The caseload PDF goes to a note writer too, so the same override applies.
+  const naming = await displayPolicyFor(user.practiceId);
+  const includeNames = formData.get("includeNames") === "on" && !naming.safeMode;
   const activeOnly = formData.get("activeOnly") === "on";
 
   const clients = await prisma.client.findMany({
@@ -74,7 +77,7 @@ export async function sendClientRoster(
   }
 
   const rows: RosterRow[] = clients.map((client) => {
-    const identity = identityOf(client);
+    const identity = identityOf(naming, client);
     return {
       clientCode: client.clientCode,
       name: includeNames ? identity.displayName : null,

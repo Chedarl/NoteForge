@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth/session";
 import { pendingReviews } from "@/lib/field/reviewQueue";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { fmtDate } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/ui";
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function ReviewPage() {
   const user = await requireRole(["OWNER", "THERAPIST", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
   const waiting = await pendingReviews(user.id, user.practiceId);
 
   return (
@@ -43,7 +45,7 @@ export default async function ReviewPage() {
               key={submission.id}
               submissionId={submission.id}
               clientCode={submission.client.clientCode}
-              clientName={identityOf(submission.client).displayName}
+              clientName={identityOf(naming, submission.client).displayName}
               workerName={submission.submittedBy.fullName}
               workerRole={
                 submission.submittedBy.discipline

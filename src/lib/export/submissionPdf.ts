@@ -3,6 +3,7 @@ import "server-only";
 import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import { TEMPLATES, renderFieldValue, encounterTypeOf } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
@@ -108,7 +109,15 @@ export function submissionPdfFilename(parts: {
 async function assembleSubmissionData(
   options: SubmissionPdfOptions
 ): Promise<SubmissionPdfData | null> {
-  const { submissionId, practiceId, includeName, restrictToTherapistId } = options;
+  const { submissionId, practiceId, restrictToTherapistId } = options;
+
+  /*
+   * Same rule as the ZIP, and it matters more here: this PDF is the document
+   * that gets sent to a note writer over WhatsApp. Safe mode has to reach the
+   * artefact that leaves the building, not only the screens inside it.
+   */
+  const naming = await displayPolicyFor(practiceId);
+  const includeName = options.includeName && !naming.safeMode;
 
   // Scoped by practiceId in the same query rather than checked afterwards, so a
   // guessed id from another tenant is a not-found and never a row this code has
@@ -137,7 +146,7 @@ async function assembleSubmissionData(
 
   if (!submission) return null;
 
-  const identity = identityOf(submission.client);
+  const identity = identityOf(naming, submission.client);
   const template = TEMPLATES[submission.templateKind as TemplateKind];
   const raw = (submission.fields ?? {}) as Record<string, unknown>;
 

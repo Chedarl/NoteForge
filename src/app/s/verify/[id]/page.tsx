@@ -5,12 +5,14 @@ import { requireRole } from "@/lib/auth/session";
 import VerifyWorkspace from "@/components/specialist/VerifyWorkspace";
 import { StatusBadge } from "@/components/shared/ui";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { fmtDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function VerifyPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
   const { id } = await params;
 
   const submission = await prisma.submission.findFirst({
@@ -31,7 +33,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ id: str
         </Link>
         <h1 className="text-lg font-semibold">{submission.client.clientCode}</h1>
         <span className="text-sm text-slate-500">
-          {identityOf(submission.client).displayName ?? submission.client.initials}
+          {identityOf(naming, submission.client).displayName ?? submission.client.initials}
         </span>
         <StatusBadge status={submission.client.status} />
         <span className="text-sm text-slate-500">

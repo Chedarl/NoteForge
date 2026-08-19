@@ -59,6 +59,28 @@ model Practice {
   /// How many days of silence before the daily sweep asks a therapist to
   /// confirm a client is still active.
   staleDays          Int      @default(60)
+
+  /// Safe mode: names are never displayed, printed or exported for this
+  /// practice — the client code and initials carry every screen on their own.
+  ///
+  /// A practice setting rather than a per-user preference, and per-*practice*
+  /// rather than global, because it is a decision about what a practice is
+  /// permitted to show, not a decision about what one person finds convenient.
+  /// A clinician who could turn it off for themselves would be a clinician for
+  /// whom it is not a control.
+  ///
+  /// Names are still stored, still encrypted, and still matched against when
+  /// somebody types one to find a client. Safe mode governs *display*: the
+  /// alternative — refusing to hold the name at all — is a different product
+  /// decision, and it would break the one job the name does (§2: the code
+  /// identifies, the name confirms).
+  ///
+  /// Default false, so turning it on is a deliberate act by a practice that
+  /// wants it. The resolver that reads this column fails the other way: a
+  /// practice it cannot read resolves to safe mode on, because "I do not know
+  /// what this practice allows" must not print a name.
+  safeMode           Boolean  @default(false)
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

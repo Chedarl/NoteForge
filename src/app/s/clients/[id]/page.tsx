@@ -7,6 +7,7 @@ import StatusChanger from "@/components/therapist/StatusChanger";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { writeAudit } from "@/lib/audit";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function ClientPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
   const { id } = await params;
 
   const client = await prisma.client.findFirst({
@@ -62,7 +64,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
         </Link>
         <h1 className="text-xl font-semibold tracking-tight">{client.clientCode}</h1>
         <span className="text-sm text-slate-500">
-          {identityOf(client).displayName ?? client.initials}
+          {identityOf(naming, client).displayName ?? client.initials}
           {client.birthYear ? ` · b. ${client.birthYear}` : ""}
         </span>
         <StatusBadge status={client.status} />

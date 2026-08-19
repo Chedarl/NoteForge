@@ -10,6 +10,7 @@ import NoteEditor from "@/components/specialist/NoteEditor";
 import MarkProcessed from "@/components/specialist/MarkProcessed";
 import FlagResolver from "@/components/specialist/FlagResolver";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import type { TemplateKind } from "@prisma/client";
@@ -28,6 +29,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function NotePage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
   const needs = await practiceNeeds(user.practiceId);
   const { id } = await params;
 
@@ -84,7 +86,7 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
         </Link>
         <h1 className="text-lg font-semibold">{submission.client.clientCode}</h1>
         <span className="text-sm text-slate-500">
-          {identityOf(submission.client).displayName ?? submission.client.initials}
+          {identityOf(naming, submission.client).displayName ?? submission.client.initials}
         </span>
         <StatusBadge status={submission.client.status} />
         {submission.discipline ? (

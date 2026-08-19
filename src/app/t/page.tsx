@@ -5,6 +5,7 @@ import { loadClientFacts } from "@/lib/portal/clientFacts";
 import { countPendingReviews } from "@/lib/field/reviewQueue";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import PersonaDashboard, { type DashboardClient } from "@/components/portal/PersonaDashboard";
 import ClientRoster from "@/components/therapist/ClientRoster";
 import DisciplineForm from "@/components/therapist/DisciplineForm";
@@ -39,6 +40,7 @@ const RECENT_LIMIT = 6;
 
 export default async function TherapistHome() {
   const user = await requireRole(["THERAPIST", "OWNER"]);
+  const naming = await displayPolicyFor(user.practiceId);
   /*
    * Asked here rather than left to `/t/profile`, because this is the screen the
    * answer decides. A person who has not answered has no dashboard to be shown
@@ -114,7 +116,7 @@ export default async function TherapistHome() {
   const rows: DashboardClient[] = clients.map((client) => ({
     id: client.id,
     clientCode: client.clientCode,
-    displayName: identityOf(client).displayName ?? client.initials,
+    displayName: identityOf(naming, client).displayName ?? client.initials,
     status: client.status,
     lastEncounterAt: client.lastEncounterAt,
     facts: facts.get(client.id) ?? {},

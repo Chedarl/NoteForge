@@ -20,19 +20,61 @@ import type { Client } from "@prisma/client";
 
 export interface ClientIdentity {
   clientCode: string;
-  /** "Maria D." — or null when no name was recorded, or it will not decrypt. */
+  /**
+   * "Maria D." — or null when no name was recorded, it will not decrypt, or
+   * the practice is in safe mode.
+   *
+   * All three collapse to the same null on purpose. Every screen in this
+   * product already handles a nameless client, because a client may genuinely
+   * have no name recorded, and that fallback path has been exercised since the
+   * first day. Safe mode reuses it rather than adding a second one, which is
+   * why turning it on changes no layout anywhere.
+   */
   displayName: string | null;
   initials: string;
   birthYear: number | null;
 }
+
+/**
+ * What this practice permits to be shown.
+ *
+ * This is a parameter and not a module-level lookup, and it is the **first**
+ * parameter and not an optional trailing one, for a single reason: making it
+ * optional would have meant every one of the twenty existing call sites kept
+ * compiling and kept printing names. A privacy control whose absence is
+ * indistinguishable from "off" is not a control, it is a setting nobody
+ * noticed. Required, the compiler names every place that has to answer the
+ * question — and `Client` has no `safeMode` field, so a client passed in the
+ * policy's position does not type-check either.
+ */
+export interface DisplayPolicy {
+  /** True when this practice has asked that names never be shown. */
+  safeMode: boolean;
+}
+
+/**
+ * The policy for code that is *matching* a name, never showing one.
+ *
+ * `resolve.ts` compares what a clinician typed against the stored names to find
+ * the right client. That comparison has to see the real name in safe mode too,
+ * or a practice that turned safe mode on would silently start creating a second
+ * client every time somebody typed a name it already held — which is worse for
+ * the record than showing the name would have been.
+ *
+ * It is a named constant rather than a literal at the call site so that
+ * `grep MATCH_ONLY` is the complete list of places that deliberately bypass the
+ * toggle. Today that is one function, and anything added to the list is a
+ * decision somebody has to defend in review.
+ */
+export const MATCH_ONLY: DisplayPolicy = { safeMode: false };
 
 type NameFields = Pick<
   Client,
   "clientCode" | "givenNameEnc" | "familyInitial" | "initials" | "birthYear"
 >;
 
-export function identityOf(client: NameFields): ClientIdentity {
-  const given = decryptField(client.givenNameEnc);
+export function identityOf(policy: DisplayPolicy, client: NameFields): ClientIdentity {
+  const given = policy.safeMode ? null : decryptField(client.givenNameEnc);
   const initial = client.familyInitial?.trim();
 
   return {
@@ -44,8 +86,8 @@ export function identityOf(client: NameFields): ClientIdentity {
 }
 
 /** `RVN-0142 · Maria D.` — the standard one-line label. Code always first. */
-export function labelOf(client: NameFields): string {
-  const identity = identityOf(client);
+export function labelOf(policy: DisplayPolicy, client: NameFields): string {
+  const identity = identityOf(policy, client);
   return identity.displayName
     ? `${identity.clientCode} · ${identity.displayName}`
     : `${identity.clientCode} · ${identity.initials}`;

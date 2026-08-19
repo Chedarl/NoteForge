@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth/session";
 import { Card, EmptyState, Pill, StatusBadge } from "@/components/shared/ui";
 import { ageLabel, fmtDate } from "@/lib/utils";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import type { Prisma, SubmissionState } from "@prisma/client";
 
@@ -46,6 +47,7 @@ export default async function Queue({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const user = await requireRole(["OWNER", "SPECIALIST"]);
+  const naming = await displayPolicyFor(user.practiceId);
   const { tab: rawTab } = await searchParams;
   const tab = TABS.find((t) => t.key === rawTab) ?? TABS[1];
 
@@ -178,7 +180,7 @@ export default async function Queue({
                     {submission.client.clientCode}
                   </span>
                   <span className="text-sm text-slate-500">
-                    {identityOf(submission.client).displayName ?? submission.client.initials}
+                    {identityOf(naming, submission.client).displayName ?? submission.client.initials}
                   </span>
                   <StatusBadge status={submission.client.status} />
                   <span className="ml-auto text-xs text-slate-500">

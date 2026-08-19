@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import {
   invitePracticeUser,
   setPracticeUserStatus,
+  setSafeMode,
   updatePracticeSettings,
   type InviteState,
   type SettingsState,
@@ -140,6 +141,68 @@ export function UserStatusForm({
       >
         {next === "ACTIVE" ? "Reactivate" : "Suspend"}
       </button>
+    </form>
+  );
+}
+
+/**
+ * Safe mode — names never shown, printed or exported.
+ *
+ * A submit button rather than a toggle that saves on change. A checkbox that
+ * writes as it is clicked gives no moment to read what it does, and this one
+ * changes what leaves the building: every screen, every PDF handed to a note
+ * writer, and every ZIP downloaded afterwards. The saved state is shown in
+ * words underneath, because a checkbox alone cannot tell you whether what you
+ * are looking at is the stored setting or an edit you have not saved.
+ */
+export function SafeModeForm({ safeMode }: { safeMode: boolean }) {
+  const [state, action, pending] = useActionState<SettingsState, FormData>(setSafeMode, {});
+  const [checked, setChecked] = useState(safeMode);
+  const dirty = checked !== safeMode;
+
+  return (
+    <form action={action} className="space-y-3">
+      <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+        <input
+          type="checkbox"
+          name="safeMode"
+          checked={checked}
+          onChange={(e) => setChecked(e.target.checked)}
+          className="mt-0.5 size-4 accent-[color:var(--nf-accent)]"
+        />
+        <span>
+          <span className="font-medium text-slate-900">
+            Never show or export client names
+          </span>
+          <span className="mt-0.5 block text-xs leading-relaxed text-slate-600">
+            Every screen, PDF and download identifies clients by their practice code and
+            initials only. Names stay stored and encrypted, and a clinician typing one can
+            still find the right client &mdash; they are simply never displayed.
+          </span>
+        </span>
+      </label>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          disabled={pending || !dirty}
+          className="nf-btn nf-btn-primary disabled:opacity-50"
+        >
+          {pending ? "Saving…" : dirty ? "Save this change" : "Saved"}
+        </button>
+        <span className="text-xs text-slate-600">
+          Currently{" "}
+          <strong className="font-semibold text-slate-900">
+            {safeMode ? "on — names are hidden everywhere" : "off — names are shown"}
+          </strong>
+        </span>
+      </div>
+
+      {state.error ? (
+        <p role="alert" className="text-sm text-rose-700">
+          {state.error}
+        </p>
+      ) : null}
     </form>
   );
 }

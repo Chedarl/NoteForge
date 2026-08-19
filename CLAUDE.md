@@ -238,6 +238,37 @@ The unlock proof is a derived cookie — an HMAC only this server can produce,
 scoped to one link's path — so there is no session table and no second database
 round trip on a route that already does an atomic claim.
 
+## Safe mode is a parameter, not a lookup
+
+`Practice.safeMode` means this practice never displays, prints or exports a
+client's name. `identityOf(policy, client)` takes the policy as its **first and
+required** argument, and that shape is the whole design: an optional trailing
+flag would have left all twenty existing call sites compiling and still printing
+names. A privacy control whose absence is indistinguishable from "off" is not a
+control. Required, the compiler names every place that has to answer the
+question — and `Client` has no `safeMode` field, so a client passed in the
+policy's position does not type-check either.
+
+Three things about it are load-bearing:
+
+- **Every failure resolves to safe mode ON.** `displayPolicyFor` returns
+  `{ safeMode: true }` for a practice it cannot find and for a database missing
+  the column. "I could not find out what this practice permits" must never print
+  a name.
+- **The export enforces it, not the screen that offers the tick box.** The ZIP
+  is reachable as `/api/export?names=1`, so a disabled checkbox stops nobody who
+  has seen an address bar. `buildExport` and `buildSubmissionPdf` AND the
+  caller's request with the policy — safe mode can refuse names and can never
+  add them to an export that did not ask.
+- **`MATCH_ONLY` is the one deliberate bypass**, in `resolve.ts`, and `grep
+  MATCH_ONLY` is the complete list of them. Matching a typed name against stored
+  ones is not displaying: without it, a practice in safe mode would silently
+  create a second client every time somebody typed a name it already held,
+  splitting one person's history across two records.
+
+Turning it on changes no layout anywhere, because `displayName` becomes null and
+every screen has handled a nameless client since the first day.
+
 ## Drafts live on the device
 
 `src/lib/forms/draft.ts` keeps an unsent form in `localStorage`, because a

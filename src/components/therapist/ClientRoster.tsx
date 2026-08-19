@@ -7,6 +7,7 @@ import StatusChanger from "@/components/therapist/StatusChanger";
 import { Card, EmptyState, Pill, SectionTitle, StatusBadge } from "@/components/shared/ui";
 import { fmtDate, ageLabel } from "@/lib/utils";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 
 /**
  * The caseload, with status first on every row.
@@ -39,6 +40,8 @@ export default async function ClientRoster({ user }: { user: User }) {
       },
     },
   });
+
+  const naming = await displayPolicyFor(user.practiceId);
 
   const active = clients.filter((c) => c.status === "ACTIVE");
   const inactive = clients.filter((c) => c.status !== "ACTIVE");
@@ -115,7 +118,7 @@ export default async function ClientRoster({ user }: { user: User }) {
                 <div className="min-w-40">
                   <div className="font-medium">{client.clientCode}</div>
                   <div className="text-xs text-slate-500">
-                    {identityOf(client).displayName ?? client.initials}
+                    {identityOf(naming, client).displayName ?? client.initials}
                     {client.birthYear ? ` · b. ${client.birthYear}` : ""}
                   </div>
                 </div>
@@ -160,7 +163,7 @@ export default async function ClientRoster({ user }: { user: User }) {
                 <div className="min-w-40">
                   <div className="font-medium">{client.clientCode}</div>
                   <div className="text-xs text-slate-500">
-                    {identityOf(client).displayName ?? client.initials}
+                    {identityOf(naming, client).displayName ?? client.initials}
                   </div>
                 </div>
                 <StatusBadge status={client.status} />

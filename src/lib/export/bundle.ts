@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { identityOf } from "@/lib/clients/identity";
+import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { STATUS_LABEL } from "@/lib/clients/labels";
@@ -94,7 +95,21 @@ interface ClientRecord {
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
 export async function buildExport(options: ExportOptions): Promise<ExportResult> {
-  const { practiceId, clientIds, from, to, includeNames, includeBlocked } = options;
+  const { practiceId, clientIds, from, to, includeBlocked } = options;
+
+  /*
+   * Safe mode overrules the request, and it is enforced *here* rather than on
+   * the screen that offers the tick box.
+   *
+   * The export is reached by URL — `/api/export?names=1` — so a checkbox
+   * disabled in the browser stops nobody who has ever seen the address bar.
+   * This function is the only way an export bundle is built, which makes it the
+   * only place the override cannot be gone around. The caller's request is
+   * ANDed with the policy: safe mode can refuse names, and it can never add
+   * them to an export that did not ask.
+   */
+  const naming = await displayPolicyFor(practiceId);
+  const includeNames = options.includeNames && !naming.safeMode;
 
   // `to` arrives as a date, meaning "up to and including that day".
   const toEnd = new Date(to);
@@ -141,7 +156,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
   const records: ClientRecord[] = clients
     .filter((client) => client.submissions.length > 0)
     .map((client) => {
-    const identity = identityOf(client);
+    const identity = identityOf(naming, client);
 
     return {
       clientCode: client.clientCode,

@@ -12,6 +12,7 @@ import {
   InviteUserForm,
   UserStatusForm,
   WhatsAppSettingsForm,
+  SafeModeForm,
 } from "@/components/specialist/PracticeSettingsForms";
 // DISCIPLINE_LABEL lives in a module with no "use client" precisely so both
 // sides can share it. PracticeSettingsForms is a client component, and a plain
@@ -47,12 +48,12 @@ export default async function SettingsPage() {
    * working. That is the third screen to fail this way, so it is caught here
    * too and reported as what it is.
    */
-  let practice: { noteWriterWhatsApp: string | null } | null = null;
+  let practice: { noteWriterWhatsApp: string | null; safeMode: boolean } | null = null;
   let migrationsPending = false;
   try {
     practice = await prisma.practice.findUnique({
       where: { id: owner.practiceId },
-      select: { noteWriterWhatsApp: true },
+      select: { noteWriterWhatsApp: true, safeMode: true },
     });
   } catch {
     migrationsPending = true;
@@ -91,6 +92,14 @@ export default async function SettingsPage() {
             Clinicians can override this per message; this is the convenient default.
           </p>
           <WhatsAppSettingsForm defaultPhone={practice?.noteWriterWhatsApp ?? ""} />
+        </Card>
+        <Card className="p-5">
+          <h2 className="font-semibold">Client identification</h2>
+          <p className="mt-1 mb-5 text-sm text-slate-600">
+            §2 of the specification: the code identifies, the name confirms. Safe mode drops
+            the second half.
+          </p>
+          <SafeModeForm safeMode={practice?.safeMode ?? false} />
         </Card>
         <Card className="p-5">
           <h2 className="font-semibold">Invite a team member</h2>
