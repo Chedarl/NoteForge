@@ -33,6 +33,31 @@ const HONOURS: Record<string, string[]> = {
   "/t/profile": [],
 };
 
+/*
+ * A portal that supervises field workers must offer a way to give one a link.
+ *
+ * The nurse practitioner is *the* supervising clinician in this product —
+ * updates land in her review queue and `FieldLink.supervisorId` points at her —
+ * and her dashboard was the one portal without the action, while the case
+ * worker had it. She had to know that "Team" in the nav was where links get
+ * made, which is a filing cabinet standing in for the thing she came to do.
+ *
+ * Nothing type-checks the relationship between a persona's nav and its actions,
+ * so this asserts it: carry `/t/team` in the nav and you carry it as an action.
+ */
+console.log("\nSupervising portals can hand out a link");
+for (const [kind, persona] of Object.entries(PERSONAS)) {
+  const inNav = persona.nav.some((item) => item.href === "/t/team");
+  const inActions = [persona.primaryAction, ...persona.secondaryActions].some((action) =>
+    action.href.startsWith("/t/team")
+  );
+  check(
+    `${kind}: nav and actions agree about /t/team`,
+    inNav === inActions,
+    { inNav, inActions }
+  );
+}
+
 for (const [kind, persona] of Object.entries(PERSONAS)) {
   const actions = [persona.primaryAction, ...persona.secondaryActions];
   for (const action of actions) {

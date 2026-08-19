@@ -155,10 +155,23 @@ export default function PersonaDashboard({
             <Link
               key={action.href + action.label}
               href={action.href}
-              className="flex items-center gap-2 rounded-xl border border-[color:var(--nf-border)] bg-white px-3 py-2.5 text-[0.8125rem] font-semibold text-slate-900 transition hover:border-slate-300"
+              className="flex items-start gap-2 rounded-xl border border-[color:var(--nf-border)] bg-white px-3 py-2.5 text-[0.8125rem] font-semibold text-slate-900 transition hover:border-slate-300"
             >
-              <Icon size={16} className="shrink-0 text-slate-500" />
-              {action.label}
+              <Icon size={16} className="mt-0.5 shrink-0 text-slate-500" />
+              <span>
+                {action.label}
+                {/*
+                  Secondary actions carry a hint too, and it was being dropped.
+                  "Send a worker their link" says what the button does and not
+                  what it is for; "they send you updates from their phone — no
+                  account" is the part that makes somebody press it.
+                */}
+                {action.hint ? (
+                  <span className="mt-0.5 block text-[0.6875rem] leading-snug font-normal text-slate-500">
+                    {action.hint}
+                  </span>
+                ) : null}
+              </span>
             </Link>
           );
         })}
