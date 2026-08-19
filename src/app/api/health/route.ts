@@ -181,13 +181,6 @@ export async function GET() {
      * can see that; only the person on the other end can.
      */
     outboundLinks: siteUrlConfigured(),
-    /*
-     * Should be false everywhere that matters. The flag cannot be on in a
-     * production build — `NODE_ENV` and `VERCEL` both gate it structurally —
-     * but a deployment is exactly where you would want to be told if somehow it
-     * were, and this endpoint reports booleans rather than values for that.
-     */
-    devAuth: devAuthEnabled(),
     handwritingReading: readerConfigured(),
     whatsappDelivery: whatsappConfigured(),
     email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
@@ -214,6 +207,22 @@ export async function GET() {
       ready: missing.length === 0,
       missing,
       checks,
+      /*
+       * Reported beside `checks`, deliberately not inside it.
+       *
+       * Every key in `checks` answers "is this configured", where false means
+       * something is absent. This one answers "is the development sign-in
+       * switched on", where **false is the desired answer** — so folding it in
+       * made a correct production deployment report `ready: false` with
+       * `missing: ["devAuth"]`. The build log points people at this endpoint,
+       * and a false alarm here sends them looking for a problem that is not
+       * there, which is the same failure as the false green this route was
+       * rewritten to stop.
+       *
+       * It cannot be true on a deployment — `NODE_ENV` and `VERCEL` both gate
+       * it — but this is exactly where you would want to be told if it were.
+       */
+      devAuth: devAuthEnabled(),
       /*
        * Named, not just counted. A migration name is not a secret — it is a
        * folder name in the repository — and it is the difference between "the
