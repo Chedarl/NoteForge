@@ -222,7 +222,9 @@ async function main() {
         initials: `${spec.given[0]}.${spec.familyInitial}.`,
         birthYear: spec.birthYear,
         status: spec.status,
-        statusReasonEnc: sealText(spec.reason) ?? null,
+        // `sealText` returns "" for an absent value, and `"" ?? null` is "" —
+        // so the nullable column filled with empty strings instead of nulls.
+        statusReasonEnc: spec.reason ? sealText(spec.reason) : null,
         statusChangedAt: spec.status === "ACTIVE" ? daysAgo(200) : daysAgo(30),
         primaryTherapistId: spec.therapistId,
         lastEncounterAt: spec.status === "ACTIVE" ? daysAgo(6) : daysAgo(45),
@@ -247,7 +249,7 @@ async function main() {
             clientId: client.id,
             fromStatus: "ACTIVE",
             toStatus: spec.status,
-            reasonEnc: sealText(spec.reason) ?? null,
+            reasonEnc: spec.reason ? sealText(spec.reason) : null,
             source: "THERAPIST_UPDATE",
             changedById: spec.therapistId,
             createdAt: daysAgo(30),
