@@ -66,6 +66,10 @@ const MESSAGES: Record<Exclude<ClientStatus, "ACTIVE">, string> = {
     "This client was transferred to another provider. New notes are not accepted here.",
   DECEASED:
     "This client is recorded as deceased. New notes cannot be filed. If this is wrong, contact the practice owner immediately — nothing should be documented against this record until it is resolved.",
+  // The reason is the information here, so the message points at it rather
+  // than inventing a circumstance the status deliberately does not name.
+  OTHER:
+    "This client is not accepting new notes. The reason recorded on their status says why — ask the practice owner if it is not clear.",
 };
 
 export function verdictFor(client: Pick<Client, "status" | "statusChangedAt" | "statusReason">): GuardVerdict {

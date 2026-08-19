@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { resolveFieldLink } from "@/lib/field/links";
+import { checkRateLimit } from "@/lib/security/rateLimit";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import FieldUpdateForm from "@/components/field/FieldUpdateForm";
 
@@ -28,7 +29,19 @@ export const metadata: Metadata = {
 
 export default async function FieldPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const session = await resolveFieldLink(token);
+  /*
+   * Throttled before the token is resolved.
+   *
+   * The token is 43 characters of base64url, so guessing one is not a realistic
+   * attack and this is not pretending otherwise. What it stops is the cheap
+   * version: a script walking candidate tokens fast enough to be worth running,
+   * against the one route in this product that faces the open internet and
+   * takes a credential in the URL. A field worker opening their own saved link
+   * never comes close to the ceiling.
+   */
+  const attempts = checkRateLimit(`field-link:${token.slice(0, 12)}`, 30, 60);
+
+  const session = attempts.ok ? await resolveFieldLink(token) : null;
 
   if (!session) {
     return (

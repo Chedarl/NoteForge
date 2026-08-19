@@ -1,5 +1,8 @@
 import { createHash } from "crypto";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { unlockCookieName, unlockMatches } from "@/lib/sharing/passcode";
+import ShareUnlockForm from "@/components/shared/ShareUnlockForm";
 
 export const dynamic = "force-dynamic";
 
@@ -30,15 +33,18 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
   const { token } = await params;
 
   const valid = /^[A-Za-z0-9_-]{43}$/.test(token);
+  const tokenHash = valid ? createHash("sha256").update(token).digest("hex") : "";
   const share = valid
     ? await prisma.shareLink.findUnique({
-        where: { tokenHash: createHash("sha256").update(token).digest("hex") },
+        where: { tokenHash },
         select: {
           documentKind: true,
           expiresAt: true,
           revokedAt: true,
           downloadCount: true,
           maxDownloads: true,
+          passcodeHash: true,
+          passcodeLockedAt: true,
         },
       })
     : null;
@@ -48,7 +54,11 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
     !share ||
     share.revokedAt !== null ||
     share.expiresAt <= now ||
-    share.downloadCount >= share.maxDownloads;
+    share.downloadCount >= share.maxDownloads ||
+    // A link somebody guessed at five times is finished, and it reads the same
+    // as one that expired. Saying "this was locked by wrong codes" would
+    // confirm to the guesser that the link was real.
+    share.passcodeLockedAt !== null;
 
   if (unavailable) {
     return (
@@ -63,6 +73,29 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
 
   const remaining = share.maxDownloads - share.downloadCount;
   const hours = Math.max(1, Math.round((share.expiresAt.getTime() - now.getTime()) / 3_600_000));
+
+  /*
+   * The code question, when there is one.
+   *
+   * Shown instead of the download button rather than beside it, because the
+   * document is genuinely not available until it is answered — the download
+   * route checks the same cookie, so a recipient who bookmarked the download
+   * URL last week does not get to skip this.
+   */
+  if (share.passcodeHash) {
+    const jar = await cookies();
+    const unlocked = unlockMatches(tokenHash, jar.get(unlockCookieName(tokenHash))?.value);
+    if (!unlocked) {
+      return (
+        <Shell title={titleFor(share.documentKind)}>
+          <p className="mt-3 text-[0.95rem] leading-relaxed text-slate-600">
+            {descriptionFor(share.documentKind)} It is locked with a short code.
+          </p>
+          <ShareUnlockForm token={token} />
+        </Shell>
+      );
+    }
+  }
 
   return (
     <Shell title={titleFor(share.documentKind)}>

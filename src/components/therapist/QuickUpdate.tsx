@@ -66,7 +66,7 @@ export function QuickUpdate({
     setEntries((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
   if (state.success) {
-    const { filed, refused, filename, downloadIds, whatsapp } = state.success;
+    const { filed, refused, filename, downloadIds, whatsapp, passcode } = state.success;
     return (
       <div className="nf-card mt-8 overflow-hidden">
         <div className="flex items-start gap-3 border-b border-[color:var(--nf-border)] bg-[color:var(--nf-accent-wash)] px-6 py-5">
@@ -89,6 +89,32 @@ export function QuickUpdate({
         </div>
 
         <div className="space-y-4 px-6 py-5">
+          {/*
+            The code, shown once and nowhere else.
+            First in the panel because it is the only thing here that cannot be
+            recovered by scrolling back — everything below it is still on the
+            screen, in the database, or one tap from the client list.
+          */}
+          {passcode && (
+            <div className="rounded-lg border border-teal-300 bg-white p-4">
+              <p className="text-sm font-semibold text-slate-900">
+                The link is locked. Here is the code.
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                This round carries client names, so the link will not open without it.
+                Give the digits to the note writer <strong>some other way</strong> — say
+                them on the phone, or use a different app. In the same chat as the link,
+                they protect nothing.
+              </p>
+              <p className="my-3 text-center font-mono text-4xl font-semibold tracking-[0.28em] tabular-nums text-slate-900">
+                {passcode}
+              </p>
+              <p className="text-center text-xs text-slate-500">
+                Shown once. It is not stored anywhere it can be read back.
+              </p>
+            </div>
+          )}
+
           {filed.length > 0 && (
             <ul className="space-y-1.5">
               {filed.map((entry) => (

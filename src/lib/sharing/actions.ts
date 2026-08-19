@@ -15,6 +15,8 @@ export interface ShareState {
     whatsappUrl: string;
     downloadUrl: string;
     expiresAt: string;
+    /** Six digits, shown once. Null when the sender chose to send it unlocked. */
+    passcode: string | null;
   };
 }
 
@@ -104,12 +106,27 @@ export async function createWhatsAppShare(
    * Both are permanent until somebody changes the deployment, and the shared
    * helper says so by name.
    */
+  /*
+   * Locked unless the sender deliberately says otherwise.
+   *
+   * The document here is always de-identified — `includeName: false` above is
+   * not negotiable on a share link — but "de-identified" means no name, not
+   * harmless. What is inside is a full clinical narrative: risk levels,
+   * medication, substance use, all tied to a client code that the recipient can
+   * resolve. Treating that as safe to leave lying in a chat because it lacks a
+   * surname would be the wrong reading of what the document is.
+   *
+   * The opt-out exists because this practice hands work over on WhatsApp all
+   * day and a code that must travel by a second route is real friction. It is
+   * an explicit act, and it is recorded.
+   */
   const stored = await storeSharedPdf({
     user,
     bytes,
     documentKind: "submission",
     submissionId: submission.id,
     auditLabel: submission.client.clientCode,
+    requirePasscode: formData.get("unlocked") !== "yes",
   });
   if (!stored.ok) return { error: stored.error };
 
@@ -122,7 +139,12 @@ export async function createWhatsAppShare(
   });
 
   return {
-    success: { whatsappUrl, downloadUrl, expiresAt: stored.share.expiresAt.toISOString() },
+    success: {
+      whatsappUrl,
+      downloadUrl,
+      expiresAt: stored.share.expiresAt.toISOString(),
+      passcode: stored.share.passcode,
+    },
   };
 }
 
@@ -222,6 +244,8 @@ export async function createRoundWhatsAppShare(
     // and auditing have something concrete to point at.
     submissionId: submissions[0].id,
     auditLabel: submissions.map((s) => s.client.clientCode).join(", "),
+    // Same rule as the single-submission share above.
+    requirePasscode: formData.get("unlocked") !== "yes",
   });
   if (!stored.ok) return { error: stored.error };
 
@@ -237,6 +261,11 @@ export async function createRoundWhatsAppShare(
   });
 
   return {
-    success: { whatsappUrl, downloadUrl, expiresAt: stored.share.expiresAt.toISOString() },
+    success: {
+      whatsappUrl,
+      downloadUrl,
+      expiresAt: stored.share.expiresAt.toISOString(),
+      passcode: stored.share.passcode,
+    },
   };
 }

@@ -198,6 +198,46 @@ an interruption, and field ids that other modules name as string literals.
 chip, the PDF's clinician statement and the §5 filename each silently return
 nothing, with lint, typecheck and build all green.
 
+## WhatsApp stays, and the assumption under it changed
+
+Meta signs no business associate agreement, and this practice hands work over on
+WhatsApp all day. Removing the channel would not make anything safer — it would
+push the PDF into email, onto a memory stick, or back onto paper. So the channel
+stays and two things about it changed.
+
+**A link goes into the chat, never the document.** `sendLink` replaced
+`sendDocument` on every path. Pushing the bytes put clinical material onto
+Meta's infrastructure and into a phone's cloud backup permanently — no expiry,
+no download ceiling, no way to withdraw it. A link keeps the bytes in the
+practice's own bucket, where all three of those apply, and what survives in a
+backup is a URL that has since stopped working. `sendDocument` is still there,
+documented as not for clinical use.
+
+**Possession of the message is no longer access to the note.**
+`src/lib/sharing/passcode.ts` mints a six-digit code, HMAC'd with
+`CONFIRM_LINK_SECRET` and bound to that link's own token hash. The link travels
+by WhatsApp; the code is meant to travel some other way. Five wrong answers and
+the link is finished — permanently, because a lock that lifts after an hour is a
+lock an attacker waits out. Six digits is only a million, so the attempt ceiling
+is doing the work, not the length.
+
+Three things about it are load-bearing:
+
+- **The download route checks the unlock, not just the landing page.** The page
+  is a courtesy; the route is the door. Somebody who kept the `/download` URL
+  never sees the page at all.
+- **`ShareOnWhatsApp` no longer auto-opens WhatsApp when a code was issued.** It
+  used to jump to the messenger the moment the link existed, which would sweep
+  the sender past the only screen the digits are ever shown on.
+- **A round carrying decrypted names is locked with no opt-out.** A
+  de-identified one is locked by default and the sender can decline, because a
+  code that must travel by a second route is real friction and pretending
+  otherwise would just get it turned off everywhere.
+
+The unlock proof is a derived cookie — an HMAC only this server can produce,
+scoped to one link's path — so there is no session table and no second database
+round trip on a route that already does an atomic claim.
+
 ## Conventions
 
 - **Server-only vs client-safe.** Anything touching the database, a key or a secret gets
@@ -467,6 +507,33 @@ still billed. It reads exactly like a dead key. Raise `max_tokens` or lower
 The test image is generated rather than committed — a 5x7 bitmap scaled up and
 encoded as greyscale PNG in `src/lib/ai/probe.ts`. A checked-in binary would
 work and would also be unreviewable.
+
+## There are tests now, and they use a real database
+
+`npm test` — Node's built-in runner over `tests/*.test.ts`, no framework added.
+It needs `DATABASE_URL` and runs in CI after the build, because the build is
+what applies migrations to the CI database.
+
+**They talk to PostgreSQL on purpose.** Every bug this codebase has actually
+shipped passed a type check and a build: an export where every section read
+"not recorded", a picker whose answers all hashed identically, a form that wiped
+itself when the server refused it. Mocking Prisma would reproduce that exact
+blind spot — it would assert that the code calls the functions it calls.
+
+Four areas, chosen because they are the ones that must never break: the status
+guardrail, `submitEncounter`, duplicate detection, and the export plus the
+completeness gate. Each file builds its own practice with its own code and
+deletes it afterwards, so files run in any order and nothing depends on the seed.
+
+The suite earned itself on the first run: it asked for a client with status
+`OTHER`, which the specification lists and the requirements marked **DONE**, and
+the insert failed because the enum had five values. That clause had been wrong
+for months behind a green build.
+
+Assert on **content**, not on calls. The ZIP test walks the archive's own local
+file headers and inflates them rather than trusting the builder's report,
+because the two export bugs were both "the function ran and produced the wrong
+bytes".
 
 ## Verify before claiming done
 

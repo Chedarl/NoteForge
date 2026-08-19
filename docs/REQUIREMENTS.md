@@ -145,7 +145,7 @@ whichever way it reached them.
 | Single column | **DONE** |
 | Embedded machine-readable JSON | **DONE** — attached as `submission.json`, keyed by template field id rather than by label |
 | Filename `[ClientID]_[YYYY-MM-DD]_[EncounterType]_[SubmissionID].pdf` | **DONE** — `[EncounterType]` is what the clinician chose, so two nursing encounters can be `…_Crisis_…` and `…_Psych-follow-up_…`. Falls back to the template name for the one-box narrative and for anything filed before the dropdown existed |
-| Downloadable by the professional | **DONE** — on the confirmation screen after submitting |
+| Downloadable by the professional | **DONE** — on the confirmation screen of both intake paths. It was claimed here while only the quick path had it, so a clinician wanting their own copy of a structured note had to mint a public share link instead |
 | Automatically available in the internal queue | **DONE** — on every queue row and on the client record |
 
 Names are **off by default**, are an explicit `?names=1` opt-in, and are audited under a
