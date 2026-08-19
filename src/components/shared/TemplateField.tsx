@@ -154,11 +154,22 @@ export default function TemplateFieldInput({
     <div>
       {header}
       <p className="mt-0.5 text-xs text-slate-500">{field.hint}</p>
+      {/*
+        `aria-required`, never the `required` attribute.
+
+        A `required` control inside a collapsed `<details>` makes the browser
+        refuse the submit with "An invalid form control is not focusable" — no
+        message on screen, no scroll, nothing at all happens when the button is
+        pressed. With the §3 sections that is the whole form dead and the cause
+        invisible. Nothing is lost by dropping it: `assessCompleteness` runs
+        server-side on every intake path and returns the missing fields by name,
+        which is the gate that actually holds.
+      */}
       <textarea
         id={field.id}
         name={field.id}
         rows={field.rows}
-        required={field.required}
+        aria-required={field.required}
         defaultValue={typeof value === "string" ? value : ""}
         disabled={disabled}
         className="nf-field mt-1"

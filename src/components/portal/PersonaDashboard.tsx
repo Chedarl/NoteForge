@@ -55,12 +55,14 @@ function Chip({
   tone = "plain",
 }: {
   children: React.ReactNode;
-  tone?: "plain" | "amber" | "teal";
+  tone?: "plain" | "amber" | "teal" | "rose";
 }) {
   const tones = {
     plain: "bg-slate-100 text-slate-700 border-slate-200",
     amber: "bg-amber-50 text-amber-800 border-amber-200",
     teal: "bg-[color:var(--nf-accent-wash)] text-[color:var(--nf-accent)] border-[#b7e0e4]",
+    // Reserved for recorded risk, and used nowhere else on this screen.
+    rose: "bg-rose-50 text-rose-800 border-rose-200",
   };
   return (
     <span
@@ -251,8 +253,25 @@ function ClientFactRow({
         </Chip>
       );
     }
-    // `risk` and `goal` intentionally produce nothing until the §3 field sets
-    // land. They are declared on the persona so the intent is recorded.
+    if (key === "risk" && client.facts.risk) {
+      /*
+       * Rose, and the only rose on this screen.
+       *
+       * Colour is reserved for meaning throughout this product, and there is no
+       * meaning it is more worth spending on than "the last time anyone asked,
+       * this person was not safe". The field is named beside the level because
+       * "Active, with plan" reads very differently under suicidal ideation than
+       * under substance use.
+       */
+      chips.push(
+        <Chip key="risk" tone="rose">
+          {client.facts.risk.field}: {client.facts.risk.label}
+        </Chip>
+      );
+    }
+    if (key === "goal" && client.facts.goal) {
+      chips.push(<Chip key="goal">{truncate(client.facts.goal, 48)}</Chip>);
+    }
   }
 
   if (chips.length === 0) {

@@ -1,6 +1,7 @@
 "use client";
 
 import TemplateFieldInput from "@/components/shared/TemplateField";
+import TemplateSections from "@/components/shared/TemplateSections";
 import { fieldType } from "@/lib/intake/templates";
 import type { NeedDefinition } from "@/lib/intake/needs";
 
@@ -139,7 +140,9 @@ export default function NoteEditor({
             and a controlled checkbox group here would be state for its own
             sake. Both post by name, and `readField` reads either back.
           */}
-          {template.fields.map((field) =>
+          <TemplateSections
+            fields={template.fields}
+            renderField={(field) =>
             fieldType(field) === "prose" ? (
               <div key={field.id}>
                 <label htmlFor={`note_${field.id}`} className="block text-sm font-medium">
@@ -163,7 +166,8 @@ export default function NoteEditor({
                 needs={needs}
               />
             )
-          )}
+            }
+          />
 
           {saveState.error ? (
             <div role="alert" className="rounded border border-rose-300 bg-rose-50 p-3">

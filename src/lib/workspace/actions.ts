@@ -229,7 +229,7 @@ export async function saveNote(_prev: NoteState, formData: FormData): Promise<No
     // The completeness gate. Deliberately at signing rather than at save, so a
     // half-finished note can be parked and picked up, but nothing incomplete can
     // ever be handed to a practice.
-    const completeness = assessCompleteness(templateKind, body);
+    const completeness = assessCompleteness(templateKind, body, submission.encounterDate);
     if (!completeness.complete) {
       return {
         error: "This note cannot be signed while required sections are empty.",

@@ -4,7 +4,7 @@ import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
 import { identityOf } from "@/lib/clients/identity";
 import { STATUS_LABEL } from "@/lib/clients/labels";
-import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
+import { TEMPLATES, renderFieldValue, encounterTypeOf } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { safeSegment } from "@/lib/export/zip";
 import { summariseChanges, changeHeadline } from "@/lib/export/changes";
@@ -163,6 +163,11 @@ async function assembleSubmissionData(
 
   const changes = await summariseChanges(submission);
 
+  // §5's `[EncounterType]` filename segment, and the line under the client code
+  // on the page. Derived in `templates.ts` so it can be exercised without a
+  // database; see the note there.
+  const encounterType = encounterTypeOf(submission.templateKind as TemplateKind, raw);
+
   const data: SubmissionPdfData = {
     submissionId: submission.id,
     practiceName: submission.practice.name,
@@ -177,7 +182,7 @@ async function assembleSubmissionData(
     clientStatusReason: submission.client.statusReason,
 
     encounterDate: iso(submission.encounterDate),
-    encounterType: template.name,
+    encounterType,
     discipline: discipline ? DISCIPLINE_LABEL[discipline] : null,
     professional: submission.submittedBy.fullName,
     professionalRole: discipline ? DISCIPLINE_LABEL[discipline] : submission.submittedBy.role,

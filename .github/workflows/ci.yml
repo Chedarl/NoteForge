@@ -52,6 +52,15 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
 
+      - name: Template definitions hold together
+        # `TemplateField` is a structure, so the compiler checks its shape and
+        # nothing about whether it makes sense: a `choice` with no options, two
+        # fields sharing an id, and a field id named as a string literal from
+        # another module all compile whether or not they are real. Rename
+        # `riskSuicidal` and the dashboard chip, the PDF's clinician statement
+        # and the encounter-type filename each silently return nothing.
+        run: npm run verify:templates
+
       - name: Portal actions point somewhere that honours them
         # A persona's primary action is a bare href, so nothing type-checks that
         # the page at the other end exists, reads the query parameter it is

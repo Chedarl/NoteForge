@@ -150,6 +150,45 @@ read-only view on the note page — and they now share
 `src/components/shared/TemplateField.tsx`. They used to have three copies of one
 loop, which was survivable when every field was a textarea and would not be now.
 
+## Sections, and two rules that came with them
+
+The §3 field sets made the nursing form about twenty fields long, so
+`TemplateField` gained `section` and the form renders through
+`src/components/shared/TemplateSections.tsx`. **Consecutive** fields sharing a
+section value are one group, so the field order *is* the grouping — there is no
+second list to fall out of step with it. A field with no section renders bare,
+which is why SOAP, DAP, BIRP and NARRATIVE look exactly as they always have.
+
+Native `<details>`, because **a collapsed `<details>` still submits the inputs
+inside it**. Conditional rendering would drop a section's answers the moment
+somebody collapsed it after typing, and it would look like the form losing work
+at random.
+
+**Never put the `required` attribute on a control inside a section.** A
+`required` control inside a closed `<details>` makes the browser refuse the
+submit with "An invalid form control is not focusable" — nothing on screen
+changes, nothing is logged, the button simply stops working. `TemplateField`
+uses `aria-required`, and `assessCompleteness` is the gate that actually holds:
+it runs server-side on every intake path and returns the missing fields by name.
+
+**A field made required does not reach backwards.** `TemplateField.since` (an
+ISO day) means `assessCompleteness` only demands it of encounters on or after
+that date, and the call sites pass the submission's own `encounterDate`. Without
+it, adding one required field drops the mean-completeness figure on
+`/s/insights` overnight — which reads as a collapse in data quality and is
+nothing of the kind — and `saveNote`'s sign gate refuses to sign an
+already-submitted encounter until somebody fills in a field the clinician was
+never shown. `npm run verify:templates` fails the build if a new required field
+arrives without one.
+
+`npm run verify:templates` also catches what the compiler cannot: a `choice`
+with no options, two fields sharing an id, a section name that reappears after
+an interruption, and field ids that other modules name as string literals.
+`clientFacts.ts` names `riskSuicidal`, `changes.ts` names `sinceLastContact`,
+`submissionPdf.ts` names `encounterType` — rename any of them and the dashboard
+chip, the PDF's clinician statement and the §5 filename each silently return
+nothing, with lint, typecheck and build all green.
+
 ## Conventions
 
 - **Server-only vs client-safe.** Anything touching the database, a key or a secret gets

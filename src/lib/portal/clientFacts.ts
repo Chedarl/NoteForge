@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { labelsForNeeds, type NeedDefinition } from "@/lib/intake/needs";
+import { TEMPLATES, isSeverityValue } from "@/lib/intake/templates";
 import type { ClientFactKey } from "@/lib/portal/personas";
 
 /**
@@ -51,19 +52,72 @@ export interface ClientFacts {
   /** How many submissions this client has, all kinds. */
   sessionCount?: number;
   /**
-   * Both wait on the §3 field sets: risk needs the `severity` fields on
-   * `NURSING`, and a goal is not modelled anywhere. Declared so the renderer
-   * and the personas can already name them.
+   * The highest risk level recorded at the last nursing encounter, already
+   * resolved to its label — "Active, no plan" and not `active_no_plan`.
+   *
+   * The *highest* across the four risk fields rather than one of them, because
+   * a caseload row has space for one fact and the one that matters is the worst
+   * one. Which field it came from is named too, since "Active, with plan" means
+   * something different under suicidal ideation than under substance use.
+   *
+   * Absent when every risk field was left at "Not assessed" — a client nobody
+   * has asked must not render as a client with no risk.
    */
-  risk?: never;
-  goal?: never;
+  risk?: { label: string; field: string };
+  /** What the case worker last wrote under goals and barriers. */
+  goal?: string;
 }
 
 /** Which template each derived fact reads from. */
 const SOURCE: Partial<Record<ClientFactKey, "CASE_MANAGEMENT" | "NURSING">> = {
   needs: "CASE_MANAGEMENT",
+  goal: "CASE_MANAGEMENT",
   medication: "NURSING",
+  risk: "NURSING",
 };
+
+/**
+ * The nursing risk fields, worst first.
+ *
+ * Order is the answer to "which one do we show", and it is severity of
+ * consequence rather than of level: an active plan to harm someone else and
+ * daily substance use are not the same finding. Read off `TEMPLATES` at call
+ * time so a level's wording is never duplicated here — `verify:templates`
+ * checks these ids exist.
+ */
+const RISK_FIELDS = ["riskSuicidal", "riskHomicidal", "riskSelfHarm", "riskSubstance"] as const;
+
+/** Which stored level counts as "nothing to show". */
+const RISK_NONE = new Set(["", "none"]);
+
+/**
+ * The worst thing recorded, as a label.
+ *
+ * Ranked by the option's position in its own field, so the scale is whatever
+ * the template says it is rather than a second copy of it here. Ties go to the
+ * earlier field in `RISK_FIELDS`.
+ */
+function worstRisk(fields: Record<string, unknown>): ClientFacts["risk"] {
+  const template = TEMPLATES.NURSING;
+  let best: { label: string; field: string; rank: number } | null = null;
+
+  for (const id of RISK_FIELDS) {
+    const def = template.fields.find((f) => f.id === id);
+    if (!def) continue;
+    const value = fields[id];
+    if (!isSeverityValue(value)) continue;
+    const level = value.level.trim();
+    if (RISK_NONE.has(level)) continue;
+
+    const rank = def.options?.findIndex((o) => o.id === level) ?? -1;
+    if (rank < 0) continue;
+    if (!best || rank > best.rank) {
+      best = { label: def.options![rank].label, field: def.label, rank };
+    }
+  }
+
+  return best ? { label: best.label, field: best.field } : undefined;
+}
 
 export async function loadClientFacts(
   practiceId: string,
@@ -132,6 +186,18 @@ export async function loadClientFacts(
       if (ids.length > 0) {
         facts.needs = labelsForNeeds(ids, practiceNeeds as unknown as NeedDefinition[]);
       }
+    }
+
+    if (row.templateKind === "CASE_MANAGEMENT" && fromSubmissions.includes("goal")) {
+      const value = fields.goalProgress;
+      if (typeof value === "string" && value.trim().length > 0) {
+        facts.goal = value.trim();
+      }
+    }
+
+    if (row.templateKind === "NURSING" && fromSubmissions.includes("risk")) {
+      const risk = worstRisk(fields);
+      if (risk) facts.risk = risk;
     }
 
     if (row.templateKind === "NURSING" && fromSubmissions.includes("medication")) {

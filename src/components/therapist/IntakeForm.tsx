@@ -1,6 +1,7 @@
 "use client";
 
 import TemplateFieldInput from "@/components/shared/TemplateField";
+import TemplateSections from "@/components/shared/TemplateSections";
 import type { NeedDefinition } from "@/lib/intake/needs";
 
 import { useActionState, useMemo, useState } from "react";
@@ -193,11 +194,16 @@ export default function IntakeForm({
       </div>
 
       {/* ── Template fields ────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        {template.fields.map((field) => (
+      <TemplateSections
+        fields={template.fields}
+        collapseOnPhone
+        // A required field the server refused is not much use inside a section
+        // the clinician has collapsed and cannot see.
+        openEverything={Boolean(state.missing?.length)}
+        renderField={(field) => (
           <TemplateFieldInput key={field.id} field={field} needs={needs} />
-        ))}
-      </div>
+        )}
+      />
 
       {state.blocked ? (
         <div role="alert" className="rounded-md border border-rose-300 bg-rose-50 p-4">

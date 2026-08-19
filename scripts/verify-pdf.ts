@@ -40,7 +40,10 @@ async function main() {
     clientStatusReason: null,
 
     encounterDate: "2026-08-10",
-    encounterType: "SOAP",
+    // The §3 encounter type, not the template name. The two differ from here
+    // on — a nursing template can carry a crisis contact — and this is the
+    // segment the §5 filename is built from.
+    encounterType: "Psych follow-up",
     discipline: "Therapist",
     professional: "Jordan Clinician",
     professionalRole: "Therapist",
@@ -87,7 +90,14 @@ async function main() {
         { fieldId: "assessment", label: "Assessment", status: "added" },
         { fieldId: "plan", label: "Plan", status: "cleared" },
       ],
-      clinicianStatement: null,
+      /*
+       * The clinician's own account of what changed, printed above the derived
+       * comparison. This was `null` here for as long as the field did not
+       * exist, which meant the block that renders it had never once been
+       * exercised — exactly the kind of gap this script is for.
+       */
+      clinicianStatement:
+        "Synthetic verification text only. Sleeping again since the dose change, and eating a little more; the weight has not moved yet.",
     },
     changeHeadline: "3 of 4 sections changed since the SOAP submission 7 days earlier.",
 

@@ -119,7 +119,12 @@ export async function operationalMetrics(
     (s) =>
       assessCompleteness(
         s.templateKind as TemplateKind,
-        (s.fields ?? {}) as Record<string, unknown>
+        (s.fields ?? {}) as Record<string, unknown>,
+        // The encounter's own date, not today. Without it, a field made
+        // required this month is scored against every submission ever filed and
+        // this figure falls off a cliff overnight — which reads as a collapse in
+        // data quality and is nothing of the kind.
+        s.encounterDate
       ).ratio
   );
 
