@@ -38,7 +38,7 @@ Two answers the client gave that shape the work:
 | All activity logged | **DONE** — append-only `AuditLog`, covering reads as well as writes |
 | Email + strong password | **PARTIAL** — Supabase Auth handles it; password policy is a Supabase dashboard setting, not enforced in app |
 | **MFA mandatory** | **TO BUILD** — Supabase supports TOTP; needs an enrolment flow and enforcement in `requireRole` |
-| Session timeout | **TO BUILD** |
+| Session timeout | **DONE** — `SESSION_IDLE_MINUTES`, default 30, enforced in middleware. *Idle* time, not session length: the stamp is refreshed on every request, so somebody working continuously is never interrupted. The timestamp is HMAC-signed, because a cookie is client-controlled and an unsigned one could be pinned to hold a session open forever |
 | Secure logout | **DONE** — `logout()` clears the Supabase session |
 
 ## 2. Client identification

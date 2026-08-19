@@ -22,11 +22,11 @@ export const dynamic = "force-dynamic";
 export default async function DevSignIn({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; timedOut?: string }>;
 }) {
   if (!devAuthEnabled()) notFound();
 
-  const { next } = await searchParams;
+  const { next, timedOut } = await searchParams;
   const users = await prisma.user.findMany({
     where: { status: "ACTIVE", authUserId: { not: null } },
     orderBy: [{ role: "asc" }, { fullName: "asc" }],
@@ -52,6 +52,12 @@ export default async function DevSignIn({
           404 there.
         </p>
       </div>
+
+      {timedOut ? (
+        <p role="status" className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+          Signed out after a period of inactivity — the same rule the real login enforces.
+        </p>
+      ) : null}
 
       {users.length === 0 ? (
         <p className="mt-6 text-sm text-slate-600">

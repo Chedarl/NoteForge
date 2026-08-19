@@ -294,6 +294,32 @@ Three details:
 The `?tab=unfiled` queue is the operational question this exists for: finished
 work nobody has confirmed reached its destination.
 
+## The idle timeout is signed, and shared by both doors
+
+A clinical workstation is shared, wheeled between rooms and left unlocked. The
+session cookie is long-lived deliberately — somebody mid-round must not be
+thrown out because a token aged — so "how long since this person did anything"
+is a different question, and nothing was asking it.
+
+`src/lib/auth/idle.ts` stamps a cookie in middleware and `SESSION_IDLE_MINUTES`
+(default 30) decides the window. Three things about it are load-bearing:
+
+- **The timestamp is HMAC-signed.** A cookie is client-controlled; an unsigned
+  one could be pinned to the current minute to hold a session open forever,
+  which would make the whole control decorative. With no `CONFIRM_LINK_SECRET`
+  to sign with there is *no* timeout rather than a fake one.
+- **"Cannot tell" means not yet idle.** A first request after signing in has no
+  stamp, and a future-dated one is a clock change or a forgery — both resolve to
+  unknown, and the caller writes a fresh stamp instead of extending anything.
+- **It applies under `DEV_AUTH` too.** Not for the development door's sake: a
+  security control that cannot be exercised on a development machine is one
+  nobody ever watches work, and two of this codebase's worst bugs were exactly
+  that.
+
+The stamp is cleared on the way out. Left behind, the next sign-in arrives
+carrying a stale one and is bounced straight back — a loop that looks like the
+password being wrong.
+
 ## Conventions
 
 - **Server-only vs client-safe.** Anything touching the database, a key or a secret gets
