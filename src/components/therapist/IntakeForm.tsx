@@ -44,6 +44,7 @@ interface ClientOption {
  */
 export default function IntakeForm({
   clients,
+  capped,
   preselectedClientId,
   previous,
   preselectedTemplate,
@@ -53,6 +54,12 @@ export default function IntakeForm({
   needs,
 }: {
   clients: ClientOption[];
+  /**
+   * True when the caseload is bigger than the picker is showing. Said out loud
+   * rather than left to be discovered: a clinician hunting for a client who is
+   * not in the list concludes the system has lost them.
+   */
+  capped: boolean;
   preselectedClientId: string;
   /**
    * The last encounter for whichever client the page opened on, resolved on the
@@ -231,6 +238,16 @@ export default function IntakeForm({
             </option>
           ))}
         </select>
+
+        {capped ? (
+          <p className="mt-1 text-xs text-slate-500">
+            Showing your most recently seen clients. If somebody is not here, find them on{" "}
+            <Link href="/t/clients" className="font-medium underline">
+              your caseload
+            </Link>{" "}
+            and press Write note — the form opens with them already chosen.
+          </p>
+        ) : null}
 
         {blockedInPicker ? (
           <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">

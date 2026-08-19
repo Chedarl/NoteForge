@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
+import { PICKER_TAKE, toPickList } from "@/lib/clients/pickList";
 import { identityOf } from "@/lib/clients/identity";
 import { whatsappConfigured } from "@/lib/whatsapp/send";
 import { QuickUpdate, type QuickClient } from "@/components/therapist/QuickUpdate";
@@ -23,7 +24,12 @@ export default async function WritePage() {
       ...(user.role === "THERAPIST" ? { primaryTherapistId: user.id } : {}),
     },
     orderBy: [{ status: "asc" }, { lastEncounterAt: "desc" }],
+    // Capped like every other picker; see `pickList.ts`. This one is a
+    // datalist of names to type against rather than a select, so the cap is
+    // even less visible — which is exactly why it needs a ceiling.
+    take: PICKER_TAKE,
   });
+  const { clients: pickable } = toPickList(clients);
 
   /*
    * `noteWriterWhatsApp` arrived in a later migration, so a database that was
@@ -51,7 +57,7 @@ export default async function WritePage() {
   // Only the name goes into the picker. `labelOf` prefixes the code, which is
   // right everywhere else but would put "RVN-0142 · Smith J" into a box the
   // clinician is meant to type a name into.
-  const options: QuickClient[] = clients.map((client) => {
+  const options: QuickClient[] = pickable.map((client) => {
     const identity = identityOf(client);
     return {
       id: client.id,
