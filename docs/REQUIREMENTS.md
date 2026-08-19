@@ -120,8 +120,8 @@ encounter types, so both formats can be written from one submission.
 
 | Clause | Status |
 | --- | --- |
-| Surface a summary of the most recent previous submissions when starting a new one — status, key changes, last risk assessment, last goals, last medications | **TO BUILD** |
-| Side-by-side "what is new / what has changed" view | **PARTIAL** — the specialist workspace shows previous notes beside the source; the clinician sees nothing at intake time, which is where it matters |
+| Surface a summary of the most recent previous submissions when starting a new one — status, key changes, last risk assessment, last goals, last medications | **DONE** — under the client picker at `/t/new`, before anything is typed. It follows the dropdown, so changing who you are writing about changes what is shown. Nothing is pre-filled from it deliberately: a medication list that copies itself forward is how a stopped drug stays in a record for a year |
+| Side-by-side "what is new / what has changed" view | **PARTIAL** — the specialist workspace shows previous notes beside the source, and the clinician now sees the last encounter at intake. A true side-by-side of two full submissions is still to build |
 | Soft warning on a likely duplicate | **DONE** — hash, ±3-day window, Jaccard and containment, then one model call. Produces a flag, never a merge |
 | Hard block when the client is Deceased or Discharged | **DONE** — server-side, at write time. The submission is kept, flagged and notified |
 

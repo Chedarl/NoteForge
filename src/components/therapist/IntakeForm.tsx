@@ -2,6 +2,7 @@
 
 import TemplateFieldInput from "@/components/shared/TemplateField";
 import TemplateSections from "@/components/shared/TemplateSections";
+import PreviousSubmission from "@/components/therapist/PreviousSubmission";
 import type { NeedDefinition } from "@/lib/intake/needs";
 
 import { useActionState, useMemo, useState } from "react";
@@ -13,6 +14,7 @@ import { STATUS_LABEL } from "@/lib/clients/labels";
 import { StatusBadge } from "@/components/shared/ui";
 import ShareOnWhatsApp from "@/components/shared/ShareOnWhatsApp";
 import type { ClientStatus, Discipline, TemplateKind } from "@prisma/client";
+import type { PreviousSummary } from "@/lib/intake/previous";
 
 interface ClientOption {
   id: string;
@@ -42,6 +44,7 @@ interface ClientOption {
 export default function IntakeForm({
   clients,
   preselectedClientId,
+  previous,
   preselectedTemplate,
   allowedTemplates,
   discipline,
@@ -50,6 +53,12 @@ export default function IntakeForm({
 }: {
   clients: ClientOption[];
   preselectedClientId: string;
+  /**
+   * The last encounter for whichever client the page opened on, resolved on the
+   * server so it is present at first paint. Changing the client fetches the
+   * next one.
+   */
+  previous: PreviousSummary | null;
   /**
    * Which template to open on, from the dashboard's primary action — a nurse
    * practitioner pressing "Start a clinical encounter" should land on the
@@ -200,6 +209,14 @@ export default function IntakeForm({
             </p>
           </div>
         ) : null}
+
+        {/*
+          What was recorded last time, under the client and above the form.
+          Placed here on purpose: after you have chosen who, before you have
+          started writing. Further down and it is read after the fact; further
+          up and it is describing a client nobody has picked yet.
+        */}
+        <PreviousSubmission clientId={clientId} initial={previous} />
       </div>
 
       {/* ── Template and date ──────────────────────────────────────────── */}
