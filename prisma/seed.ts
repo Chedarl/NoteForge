@@ -25,6 +25,7 @@ import {
   type Discipline,
   type TemplateKind,
 } from "@prisma/client";
+import { TEMPLATES } from "../src/lib/intake/templates";
 import { createClient } from "@supabase/supabase-js";
 import { createCipheriv, createHash, randomBytes } from "crypto";
 
@@ -313,6 +314,29 @@ async function seedSubmissions(ctx: {
     kind?: "STRUCTURED" | "PHOTO";
     discipline?: Discipline;
   }) => {
+    /*
+     * Every key must be a real field id for this template.
+     *
+     * These were keyed by *label* — "Subjective", "Plan" — while every reader in
+     * the product looks them up by id. So the seeded SOAP encounters exported
+     * with "not recorded" under every single heading, and the demo anybody would
+     * show a customer was an empty document. Nothing failed: the rows were
+     * written, the ZIP was built, the JSON was valid, and the field map was
+     * silently empty.
+     *
+     * Throwing here rather than warning, because a seed that produces data the
+     * product cannot read is worse than a seed that does not run.
+     */
+    const known = new Set(TEMPLATES[spec.templateKind].fields.map((f) => f.id));
+    for (const key of Object.keys(spec.fields)) {
+      if (!known.has(key)) {
+        throw new Error(
+          `Seed: "${key}" is not a field of ${spec.templateKind}. ` +
+            `Use the field id, not its label. Known ids: ${[...known].join(", ")}`
+        );
+      }
+    }
+
     // Mirrors flattenFields() in src/lib/intake/templates.ts: the stored text is
     // what duplicate detection compares, so it has to look like what the real
     // intake path produces, not like a dump of the object.
@@ -350,10 +374,10 @@ async function seedSubmissions(ctx: {
       encounterDaysAgo: 30 - i * 6,
       createdDaysAgo: 29 - i * 6,
       fields: {
-        Subjective: `Client reported a steadier week. Sleep improved to around six hours. Described one difficult conversation at work on ${["Monday", "Tuesday", "Thursday", "Friday"][i]} that they managed without avoiding it.`,
-        Objective: "Attended on time, engaged throughout, affect brighter than last session. No indicators of risk raised or observed.",
-        Assessment: "Continued gradual improvement in mood and daytime functioning. Behavioural activation is holding.",
-        Plan: "Continue weekly. Keep the sleep log. Review the work situation next session.",
+        subjective: `Client reported a steadier week. Sleep improved to around six hours. Described one difficult conversation at work on ${["Monday", "Tuesday", "Thursday", "Friday"][i]} that they managed without avoiding it.`,
+        objective: "Attended on time, engaged throughout, affect brighter than last session. No indicators of risk raised or observed.",
+        assessment: "Continued gradual improvement in mood and daytime functioning. Behavioural activation is holding.",
+        plan: "Continue weekly. Keep the sleep log. Review the work situation next session.",
       },
       state: "DONE",
     });

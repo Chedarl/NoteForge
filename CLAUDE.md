@@ -238,6 +238,39 @@ The unlock proof is a derived cookie — an HMAC only this server can produce,
 scoped to one link's path — so there is no session table and no second database
 round trip on a route that already does an atomic claim.
 
+## The export is Word now, and the seed nearly hid a bug in it
+
+`src/lib/export/docx.ts` writes a real `.docx` on top of the ZIP writer already
+in that directory — a `.docx` *is* a ZIP of XML parts — so the note writer opens
+a document instead of decoding `## Assessment` and `**bold**`. `sessions.json`
+beside it is unchanged and is still the machine-readable copy.
+
+Two failure modes, neither of which a build catches:
+
+- **A missing part.** Word wants `[Content_Types].xml`, `_rels/.rels` and
+  `word/_rels/document.xml.rels`. Omit one and it reports "corrupt" without
+  saying which.
+- **A raw `&` or `<`.** Clinical prose has both — "BP 120/80 & stable", "<2
+  units daily" — and unescaped they are fatal XML parse errors, so the whole
+  document fails to open. Control characters below 0x20 arrive out of OCR and
+  are illegal in XML 1.0 with *no* escape that makes them legal; they are
+  dropped.
+
+`npm run verify:docx` unzips the output and asserts the structure Word requires.
+Its own tag-balance check was wrong on the first run and failed five perfectly
+good parts — worth remembering that a failing assertion is as likely to be wrong
+as the thing it asserts about.
+
+**The seed was storing fields keyed by label.** `{ Subjective: … }` where every
+reader looks up `subjective`, so all four seeded SOAP encounters exported with
+"not recorded" under every heading. Nothing failed: the rows were written, the
+ZIP was built, the JSON was valid, and the field map was silently empty — the
+same shape as the two export bugs already described in this file, found the same
+way, by opening the artefact. `make()` in `prisma/seed.ts` now throws on a key
+that is not a field id of that template. Note that the seed leaves existing
+submissions alone, so re-running it does not fix rows already written: delete
+them first.
+
 ## Safe mode is a parameter, not a lookup
 
 `Practice.safeMode` means this practice never displays, prints or exports a

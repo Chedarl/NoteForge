@@ -74,6 +74,16 @@ jobs:
         # lint, typecheck and build were all green. Needs no database.
         run: npm run verify:portals
 
+      - name: The Word export is a file Word will open
+        # A `.docx` is a ZIP of XML parts, and it fails the way this repository
+        # keeps being bitten: the build is green, the bytes are the right length,
+        # and Word reports "corrupt" without saying which of five parts is wrong.
+        # An unescaped `&` in clinical prose is a fatal parse error, not a
+        # rendering glitch. Unzips the result and checks the structure Word
+        # requires rather than the structure the writer happens to emit. No
+        # database.
+        run: npm run verify:docx
+
       - run: npm run build
 
       - name: Tests
