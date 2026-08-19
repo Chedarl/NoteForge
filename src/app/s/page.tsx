@@ -29,6 +29,15 @@ const TABS = [
   { key: "ready", label: "Ready to write", states: ["QUEUED", "IN_PROGRESS"] },
   { key: "flagged", label: "Flagged", states: [] },
   { key: "blocked", label: "Blocked on status", states: ["BLOCKED"] },
+  /*
+   * "Written, but is it filed?"
+   *
+   * DONE means a note was produced here. It never meant anybody entered it into
+   * the practice's own system, and that last step happens somewhere this
+   * product cannot see. This tab is the difference: finished work nobody has
+   * confirmed reached its destination.
+   */
+  { key: "unfiled", label: "Written, not filed", states: ["DONE"] },
 ] as const;
 
 export default async function Queue({
@@ -53,10 +62,16 @@ export default async function Queue({
           state: { notIn: ["DONE", "SUPERSEDED", "AWAITING_REVIEW"] },
           flags: { some: { resolution: "OPEN", kind: { not: "STATUS_BLOCK" } } },
         }
-      : {
-          practiceId: user.practiceId,
-          state: { in: tab.states as unknown as SubmissionState[] },
-        };
+      : tab.key === "unfiled"
+        ? {
+            practiceId: user.practiceId,
+            state: "DONE",
+            processedAt: null,
+          }
+        : {
+            practiceId: user.practiceId,
+            state: { in: tab.states as unknown as SubmissionState[] },
+          };
 
   const [submissions, counts, practice] = await Promise.all([
     prisma.submission.findMany({
@@ -135,7 +150,9 @@ export default async function Queue({
           body={
             tab.key === "blocked"
               ? "No submissions have been refused on a client status. That is the outcome you want."
-              : "Nothing is waiting in this part of the queue."
+              : tab.key === "unfiled"
+                ? "Every note that has been written is marked as filed in the practice's own system. Nothing is sitting finished and forgotten."
+                : "Nothing is waiting in this part of the queue."
           }
         />
       ) : (

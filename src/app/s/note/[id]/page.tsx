@@ -7,6 +7,7 @@ import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
 import { practiceNeeds } from "@/lib/intake/practiceNeeds";
 import { StatusBadge, Pill } from "@/components/shared/ui";
 import NoteEditor from "@/components/specialist/NoteEditor";
+import MarkProcessed from "@/components/specialist/MarkProcessed";
 import FlagResolver from "@/components/specialist/FlagResolver";
 import { identityOf } from "@/lib/clients/identity";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
@@ -53,6 +54,7 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
         },
       },
       note: { include: { tags: true, signedBy: { select: { fullName: true } } } },
+      processedBy: { select: { fullName: true } },
     },
   });
   if (!submission || !submission.note) notFound();
@@ -107,6 +109,28 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
           this note belongs to a session that predates the change before you write it up.
         </div>
       ) : null}
+
+      {/*
+        The last step, and the one that happens outside this product. Placed
+        above the editor rather than below it: a specialist opening a note that
+        somebody already filed should learn that before they start editing.
+      */}
+      <MarkProcessed
+        submissionId={submission.id}
+        canProcess={
+          submission.note.state === "SIGNED" || submission.note.state === "DELIVERED"
+        }
+        processed={
+          submission.processedAt
+            ? {
+                at: fmtDate(submission.processedAt),
+                by: submission.processedBy?.fullName ?? null,
+                version: submission.processedNoteVersion,
+                reference: submission.processedRef,
+              }
+            : null
+        }
+      />
 
       {submission.flags.length > 0 ? (
         <div className="space-y-2">

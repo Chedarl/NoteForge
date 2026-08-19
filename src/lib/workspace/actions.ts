@@ -355,3 +355,89 @@ export async function addNoteTag(
   revalidatePath(`/s/note`);
   return { ok: true };
 }
+
+export interface ProcessedState {
+  error?: string;
+  ok?: boolean;
+}
+
+/**
+ * "This one is filed."
+ *
+ * The last step in the chain happens somewhere this product cannot see: a
+ * person opens Credible or ICANotes and types the note in. `DONE` has always
+ * meant *a note was produced here*, and from inside the system a note that was
+ * entered and one that was forgotten look exactly the same. That gap is where
+ * work actually goes missing — and it is the gap the practice gets asked about
+ * when a claim comes back.
+ *
+ * So it is recorded by hand, by a named person, with the note version they
+ * filed and whatever reference the destination gave back. Nothing sets it
+ * automatically: "was this actually filed" is the one question nobody should be
+ * able to answer on somebody else's behalf.
+ *
+ * Reversible on purpose. Marking the wrong row is an ordinary mistake, and a
+ * one-way flag makes people hesitate before using it at all — which produces a
+ * field nobody trusts. Both directions are audited.
+ */
+export async function markProcessed(
+  _prev: ProcessedState,
+  formData: FormData
+): Promise<ProcessedState> {
+  const user = await requireStaff();
+  const submissionId = String(formData.get("submissionId") ?? "");
+  const undo = formData.get("undo") === "yes";
+  const reference = String(formData.get("reference") ?? "").trim().slice(0, 120);
+
+  const submission = await prisma.submission.findFirst({
+    where: { id: submissionId, practiceId: user.practiceId },
+    include: { note: { select: { state: true, version: true } }, client: { select: { clientCode: true } } },
+  });
+  if (!submission) return { error: "That submission could not be found." };
+
+  if (!undo) {
+    /*
+     * Only a signed note can be filed, because only a signed note exists as a
+     * finished document. Allowing it earlier would let somebody mark work
+     * complete that a specialist has not put their name to yet, which is the
+     * same failure the completeness gate at signing exists to prevent.
+     */
+    if (!submission.note || (submission.note.state !== "SIGNED" && submission.note.state !== "DELIVERED")) {
+      return { error: "Sign the note before marking it filed — there is nothing finished to file yet." };
+    }
+  }
+
+  await prisma.submission.update({
+    where: { id: submission.id },
+    data: undo
+      ? { processedAt: null, processedById: null, processedNoteVersion: null, processedRef: null }
+      : {
+          processedAt: new Date(),
+          processedById: user.id,
+          processedNoteVersion: submission.note?.version ?? null,
+          processedRef: reference || null,
+        },
+  });
+
+  await writeAudit({
+    practiceId: user.practiceId,
+    actor: user,
+    action: undo ? "submission.unmarked_processed" : "submission.processed",
+    entityType: "submission",
+    entityId: submission.id,
+    entityLabel: submission.client.clientCode,
+    changes: undo
+      ? { processed: { from: "yes", to: "no" } }
+      : {
+          processed: { from: "no", to: "yes" },
+          noteVersion: { from: null, to: String(submission.note?.version ?? "") },
+          // The reference is recorded because it is the thing that lets someone
+          // reconcile against the destination system later. It is not clinical.
+          reference: { from: null, to: reference || "(none given)" },
+        },
+  });
+
+  revalidatePath(`/s/note/${submission.id}`);
+  revalidatePath("/s");
+  return { ok: true };
+}

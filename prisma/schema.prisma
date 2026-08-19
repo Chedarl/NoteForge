@@ -167,6 +167,7 @@ model User {
   createdFieldLinks   FieldLink[]          @relation("FieldLinkCreatedBy")
   supervisedLinks     FieldLink[]          @relation("FieldLinkSupervisor")
   submissionsToReview Submission[]         @relation("SubmissionReviewer")
+  submissionsProcessed Submission[]        @relation("ProcessedBy")
 
   @@index([practiceId, role])
 }
@@ -421,6 +422,30 @@ model Submission {
   /// from the field worker's so the document shows who said which.
   reviewNote String?
 
+  /// Filed into the practice's own system — the last step, and the one that
+  /// happens outside this product.
+  ///
+  /// `DONE` means a note was produced here. It does not mean anybody put it
+  /// into Credible or ICANotes, and that gap is where work actually goes
+  /// missing: a note that is written, delivered and never entered is
+  /// indistinguishable, from inside this system, from one that was. So it is
+  /// recorded by hand, by a named person, with the version of the note they
+  /// filed and whatever reference their system gave back.
+  ///
+  /// A human marks this. Nothing sets it automatically — rule 3 — because "was
+  /// this actually filed" is precisely the question nobody should be able to
+  /// answer on somebody else's behalf.
+  processedAt          DateTime?
+  processedById        String?
+  processedBy          User?     @relation("ProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
+  /// Which version of the note went. A note corrected after signature bumps
+  /// its version, so "which one did they get" has an answer.
+  processedNoteVersion Int?
+  /// Their reference, if their system gives one. Free text, never validated —
+  /// every destination formats these differently and guessing would reject
+  /// something real.
+  processedRef         String?
+
   supersedesId String?
   supersedes   Submission?  @relation("Supersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
   supersededBy Submission[] @relation("Supersedes")
@@ -436,6 +461,9 @@ model Submission {
 
   @@index([practiceId, state, createdAt])
   @@index([reviewerId, reviewedAt])
+  /// "What have we produced but nobody has filed yet" — the operational
+  /// question this column exists to answer.
+  @@index([practiceId, processedAt])
   @@index([clientId, encounterDate])
   @@index([practiceId, contentHash])
   @@index([submittedById])
