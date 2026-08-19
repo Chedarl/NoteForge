@@ -98,8 +98,25 @@ export default function PersonaDashboard({
         ? "grid-cols-2"
         : "grid-cols-1";
 
+  /*
+   * Two shapes, one order.
+   *
+   * This screen was built phone-first and capped at `max-w-xl`, which is wider
+   * than any phone — so on a phone it is simply the screen, which is right. On
+   * a laptop the same rule left a 576px column floating in the middle of a
+   * 1440px window, with the navigation bar above it spanning twice that width
+   * and hanging off a different left edge. Nothing was broken and everything
+   * looked wrong: it read as a phone app pasted into the middle of a desktop
+   * page, which is exactly what it was.
+   *
+   * From `lg` the cap comes off and the actions and the caseload sit side by
+   * side. Below `lg` not one class changes, so the phone layout this was
+   * designed for is untouched — and because it is a grid rather than a
+   * reordering, the DOM order is the same in both, which keeps the tab order
+   * and the screen-reader order honest.
+   */
   return (
-    <div className="mx-auto flex max-w-xl flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-xl flex-col gap-4 lg:mx-0 lg:max-w-none">
       <header>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
           {persona.greeting}
@@ -129,6 +146,14 @@ export default function PersonaDashboard({
         </Link>
       ) : null}
 
+      {/*
+        The band that becomes two columns. `items-start` so the caseload does
+        not stretch the actions rail to its own height, and `minmax(0,1fr)` on
+        the second track because a long client name in a grid child will
+        otherwise refuse to wrap and push the row wider than the page.
+      */}
+      <div className="grid gap-4 lg:grid-cols-[21rem_minmax(0,1fr)] lg:items-start lg:gap-6">
+      <div className="flex flex-col gap-2">
       <Link
         href={persona.primaryAction.href}
         className="flex items-center gap-3.5 rounded-2xl bg-[color:var(--nf-accent)] px-4 py-[1.1rem] text-white shadow-[0_1px_2px_rgba(8,127,140,.3)] transition hover:bg-[color:var(--nf-accent-strong)]"
@@ -148,7 +173,10 @@ export default function PersonaDashboard({
         </span>
       </Link>
 
-      <div className={`grid gap-2 ${secondaryColumns}`}>
+      {/* Two across on a phone, one down the rail on a laptop: at 21rem a
+          two-column split leaves ~150px a side, which is not enough for an
+          icon, a label and the hint underneath it. */}
+      <div className={`grid gap-2 ${secondaryColumns} lg:grid-cols-1`}>
         {persona.secondaryActions.map((action) => {
           const Icon = ICONS[action.icon];
           return (
@@ -177,7 +205,9 @@ export default function PersonaDashboard({
         })}
       </div>
 
-      <section className="mt-1">
+      </div>
+
+      <section className="mt-1 lg:mt-0">
         <h2 className="mb-2 text-[0.6875rem] font-bold tracking-[0.1em] text-slate-500 uppercase">
           {persona.clientsHeading}
         </h2>
@@ -225,6 +255,7 @@ export default function PersonaDashboard({
           </div>
         )}
       </section>
+      </div>
     </div>
   );
 }

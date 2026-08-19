@@ -55,7 +55,11 @@ export function Nav({
 
   return (
     <header className="sticky top-0 z-20 border-b border-[color:var(--nf-border)] bg-white/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl items-center gap-2 px-3 py-2.5 sm:gap-4 sm:px-4">
+      {/* The gutter here must match the one on `main` in both layouts. When the
+          two differed, the logo and every page heading below it hung off
+          different left edges — invisible on a phone, where both are wider than
+          the screen, and the first thing you see on a laptop. */}
+      <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2.5 sm:gap-4">
         <Link href="/" className="shrink-0" aria-label="NoteForge">
           {/* Smaller on a phone. At 390px the full mark took a fifth of the bar
               and squeezed the links it sits beside into unreadable stubs. */}
