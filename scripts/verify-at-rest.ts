@@ -24,15 +24,10 @@
  * to assert on and safe to have in a repository.
  */
 
-import { execFileSync } from "child_process";
+import { PrismaClient } from "@prisma/client";
 
-/**
- * Phrases from `prisma/seed.ts` that are unambiguously clinical.
- *
- * Chosen to be long enough that they cannot appear in base64 by chance, and
- * spread across every column that carries narrative, so a regression in any one
- * of them shows up here.
- */
+const prisma = new PrismaClient();
+
 const MUST_BE_ABSENT = [
   // Submission.fields / rawText
   "settled week",
@@ -64,81 +59,85 @@ const MUST_BE_PRESENT = [
   "nfenc1", // and the envelopes are actually there
 ];
 
-function dump(): string {
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    console.error("DATABASE_URL is not set.");
-    process.exit(1);
+/**
+ * Every text-ish value in the database, read back out.
+ *
+ * The first version shelled out to `pg_dump`. That works locally and is fragile
+ * in CI — a client older than the server aborts with "server version mismatch",
+ * which would fail this check for a reason that has nothing to do with
+ * encryption. Worse, it would fail *loudly but wrongly*, and a check that cries
+ * wolf gets deleted.
+ *
+ * Enumerating `information_schema` instead is portable, needs no binary, and is
+ * a stricter version of the same idea: it does not care which columns anybody
+ * thought to encrypt, it reads every `text`, `varchar`, `json` and `jsonb`
+ * column in the schema and concatenates the lot. That is what finds the column
+ * nobody remembered — which is exactly how `SubmissionFlag.detail`,
+ * `Client.statusReason` and `ClientStatusEvent.reason` were caught.
+ */
+async function readEverything(): Promise<{ text: string; columns: number }> {
+  const columns = await prisma.$queryRaw<{ table_name: string; column_name: string }[]>`
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND data_type IN ('text', 'character varying', 'json', 'jsonb')
+    ORDER BY table_name, column_name
+  `;
+
+  const parts: string[] = [];
+  for (const { table_name, column_name } of columns) {
+    // Identifiers come from information_schema, not from user input, and are
+    // quoted anyway. Values are cast to text so json and jsonb read the same.
+    const rows = await prisma.$queryRawUnsafe<Record<string, string | null>[]>(
+      `SELECT "${column_name}"::text AS v FROM "${table_name}" WHERE "${column_name}" IS NOT NULL`
+    );
+    for (const row of rows) if (row.v) parts.push(row.v);
   }
-  /*
-   * Prisma's connection string carries parameters libpq does not accept —
-   * `schema`, and the `host=/tmp` that selects a unix socket. Handed to
-   * `pg_dump` unchanged they fail with "invalid URI query parameter", which
-   * reads like the database being unreachable. Rebuilt here rather than asking
-   * for a second environment variable that would drift from the first.
-   */
-  let dsn: string;
-  try {
-    const parsed = new URL(url);
-    const socket = parsed.searchParams.get("host");
-    parsed.search = "";
-    if (socket) {
-      // A unix socket is passed as the host, and the one in the URL is ignored.
-      dsn = `postgresql://${parsed.username}@/${parsed.pathname.replace(/^\//, "")}?host=${socket}&port=${parsed.port || 5432}`;
+
+  return { text: parts.join("\n"), columns: columns.length };
+}
+
+async function main() {
+  const { text: sql, columns } = await readEverything();
+  console.log(`Read ${sql.length.toLocaleString()} characters across ${columns} text columns.\n`);
+
+  let failures = 0;
+
+  for (const phrase of MUST_BE_PRESENT) {
+    const found = sql.includes(phrase);
+    if (!found) failures++;
+    console.log(`  ${found ? "ok  " : "FAIL"} readable: ${phrase}`);
+  }
+
+  console.log();
+
+  for (const phrase of MUST_BE_ABSENT) {
+    // Case-insensitive: the question is whether a person reading the database
+    // could understand it, not whether it matches byte for byte.
+    const at = sql.toLowerCase().indexOf(phrase.toLowerCase());
+    if (at !== -1) {
+      failures++;
+      // A local database of invented clients, so the excerpt is not a
+      // disclosure — and without it you cannot tell which column is at fault.
+      console.log(`  FAIL in the clear: "${phrase}"`);
+      console.log(`       …${sql.slice(Math.max(0, at - 90), at + 60).replace(/\s+/g, " ")}…`);
     } else {
-      dsn = parsed.toString();
+      console.log(`  ok   sealed: ${phrase}`);
     }
-  } catch {
-    dsn = url;
   }
 
-  try {
-    return execFileSync("pg_dump", ["--dbname", dsn], {
-      encoding: "utf8",
-      maxBuffer: 512 * 1024 * 1024,
-      env: { ...process.env, PATH: `/usr/lib/postgresql/16/bin:${process.env.PATH ?? ""}` },
-    });
-  } catch (error) {
-    console.error("pg_dump failed. Is PostgreSQL reachable and pg_dump on PATH?");
-    console.error(error instanceof Error ? error.message : String(error));
+  if (failures > 0) {
+    console.error(
+      `\n${failures} check(s) failed — clinical text is readable in the database.`
+    );
     process.exit(1);
   }
+  console.log("\nNo clinical text is readable in the database.");
 }
 
-const sql = dump();
-console.log(`Dumped ${sql.length.toLocaleString()} bytes.\n`);
-
-let failures = 0;
-
-for (const phrase of MUST_BE_PRESENT) {
-  const found = sql.includes(phrase);
-  if (!found) failures++;
-  console.log(`  ${found ? "ok  " : "FAIL"} readable: ${phrase}`);
-}
-
-console.log();
-
-for (const phrase of MUST_BE_ABSENT) {
-  // Case-insensitive: the point is whether a person reading the dump could
-  // understand it, not whether it matches byte for byte.
-  const at = sql.toLowerCase().indexOf(phrase.toLowerCase());
-  if (at !== -1) {
-    failures++;
-    // Print the surrounding row so the offending column is obvious. This is a
-    // local development database seeded with invented clients, so the excerpt
-    // is not a disclosure.
-    const line = sql.slice(Math.max(0, at - 120), at + 60).split("\n").pop();
-    console.log(`  FAIL in the clear: "${phrase}"`);
-    console.log(`       …${line}…`);
-  } else {
-    console.log(`  ok   sealed: ${phrase}`);
-  }
-}
-
-if (failures > 0) {
-  console.error(
-    `\n${failures} check(s) failed — clinical text is readable in a database dump.`
-  );
-  process.exit(1);
-}
-console.log("\nNo clinical text is readable in a database dump.");
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());
