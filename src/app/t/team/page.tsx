@@ -1,11 +1,10 @@
 import { requireRole } from "@/lib/auth/session";
 import { listFieldAgents } from "@/lib/field/manage";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
-import { Card, Pill } from "@/components/shared/ui";
-import {
-  AddFieldAgentForm,
-  WithdrawLinkForm,
-} from "@/components/specialist/FieldAgentForms";
+import { Card } from "@/components/shared/ui";
+import { AddFieldAgentForm } from "@/components/specialist/FieldAgentForms";
+import FieldWorkerList from "@/components/specialist/FieldWorkerList";
+import { siteUrlConfigured } from "@/lib/email/send";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +23,11 @@ export const dynamic = "force-dynamic";
 export default async function TeamPage() {
   const user = await requireRole(["OWNER", "THERAPIST", "SPECIALIST"]);
   const links = await listFieldAgents(user.practiceId, user.id);
+  // Read once here rather than inside the client component: a link built from
+  // the localhost fallback is handed over looking perfectly normal and opens
+  // nothing on the worker's phone, and the only person who sees that is the one
+  // person who cannot report it.
+  const reachable = siteUrlConfigured();
 
   return (
     <div className="space-y-6">
@@ -38,47 +42,22 @@ export default async function TeamPage() {
       </div>
 
       <Card className="p-5">
-        <AddFieldAgentForm clinicianName={user.fullName} />
+        <AddFieldAgentForm clinicianName={user.fullName} linksReachable={reachable} />
       </Card>
 
-      {links.length > 0 ? (
-        <section>
-          <h2 className="mb-2 font-semibold">Links you have given out</h2>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="divide-y divide-slate-100">
-              {links.map((link) => (
-                <div key={link.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
-                  <span className="font-medium text-slate-900">{link.agent.fullName}</span>
-                  <span className="text-sm text-slate-500">
-                    {link.agent.discipline
-                      ? DISCIPLINE_LABEL[link.agent.discipline]
-                      : "Field worker"}
-                  </span>
-                  {link.revokedAt ? (
-                    <Pill tone="rose">Withdrawn</Pill>
-                  ) : (
-                    <Pill tone="emerald">Active</Pill>
-                  )}
-                  <span className="text-xs text-slate-500">
-                    {link.useCount === 0
-                      ? "not used yet"
-                      : `${link.useCount} update${link.useCount === 1 ? "" : "s"} sent`}
-                  </span>
-                  <span className="ml-auto">
-                    {link.revokedAt ? null : (
-                      <WithdrawLinkForm linkId={link.id} name={link.agent.fullName} />
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            Withdrawing a link stops it immediately and affects nobody else. Everything that
-            person already sent stays exactly where it is.
-          </p>
-        </section>
-      ) : null}
+      <FieldWorkerList
+        rows={links.map((link) => ({
+          linkId: link.id,
+          name: link.agent.fullName,
+          kind: link.agent.discipline
+            ? DISCIPLINE_LABEL[link.agent.discipline]
+            : "Field worker",
+          revoked: Boolean(link.revokedAt),
+          useCount: link.useCount,
+        }))}
+        clinicianName={user.fullName}
+        linksReachable={reachable}
+      />
     </div>
   );
 }

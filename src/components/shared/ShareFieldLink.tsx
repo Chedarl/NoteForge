@@ -46,10 +46,23 @@ export default function ShareFieldLink({
   workerName,
   url,
   clinicianName,
+  linksReachable = true,
 }: {
   workerName: string;
   url: string;
   clinicianName: string;
+  /**
+   * False when the deployment has no configured base URL, so `siteUrl()` fell
+   * back to `http://localhost:3000`.
+   *
+   * This has already happened in production once, and it is invisible from
+   * inside: the link is minted, the row is stored, the screen says the link is
+   * ready — and it opens nothing on anybody else's phone. The only person who
+   * ever sees the failure is the worker who cannot use it, and they are the one
+   * person with no way to report it. So it is said here, on the screen holding
+   * the dead link, rather than left to a health endpoint nobody reads.
+   */
+  linksReachable?: boolean;
 }) {
   const [code, setCode] = useState("1");
   const [phone, setPhone] = useState("");
@@ -122,6 +135,19 @@ export default function ShareFieldLink({
 
   return (
     <div className="space-y-3">
+      {linksReachable ? null : (
+        <p
+          role="alert"
+          className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs leading-relaxed text-rose-900"
+        >
+          <strong className="font-semibold">This link will not work for them.</strong> The
+          deployment has no site address configured, so the link below points at{" "}
+          <code className="font-mono">localhost</code> — it opens on this machine and nowhere
+          else. Set <code className="font-mono">NEXT_PUBLIC_SITE_URL</code> and issue the link
+          again.
+        </p>
+      )}
+
       <div className="flex gap-2">
         <input
           readOnly
@@ -144,11 +170,12 @@ export default function ShareFieldLink({
             value={code}
             onChange={(e) => setCode(e.target.value)}
             aria-label="Country code"
-            className="nf-field w-[6.5rem] shrink-0"
+            className="nf-field w-[9.5rem] shrink-0"
           >
+            {/* The country name, not the bare code. See CallingCodeField. */}
             {CALLING_CODES.map((c) => (
               <option key={c.code} value={c.code}>
-                +{c.code}
+                {c.label}
               </option>
             ))}
           </select>

@@ -3,10 +3,11 @@ import { requireRole } from "@/lib/auth/session";
 import { Card, Pill } from "@/components/shared/ui";
 import {
   AddFieldAgentForm,
-  WithdrawLinkForm,
   FieldLinkHint,
 } from "@/components/specialist/FieldAgentForms";
 import { listFieldAgents } from "@/lib/field/manage";
+import FieldWorkerList from "@/components/specialist/FieldWorkerList";
+import { siteUrlConfigured } from "@/lib/email/send";
 import {
   InviteUserForm,
   UserStatusForm,
@@ -36,6 +37,7 @@ export default async function SettingsPage() {
   });
 
   const fieldLinks = await listFieldAgents(owner.practiceId);
+  const reachable = siteUrlConfigured();
 
   /*
    * `findUniqueOrThrow` selects every column on Practice, including
@@ -109,32 +111,22 @@ export default async function SettingsPage() {
           <FieldLinkHint />
         </div>
         <Card className="p-5">
-          <AddFieldAgentForm clinicianName={owner.fullName} />
+          <AddFieldAgentForm clinicianName={owner.fullName} linksReachable={reachable} />
           {fieldLinks.length > 0 ? (
-            <div className="mt-5 divide-y divide-slate-100 border-t border-slate-100 pt-1">
-              {fieldLinks.map((link) => (
-                <div key={link.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
-                  <span className="font-medium text-slate-900">{link.agent.fullName}</span>
-                  <span className="text-sm text-slate-500">
-                    {link.agent.discipline ? DISCIPLINE_LABEL[link.agent.discipline] : "Field worker"}
-                  </span>
-                  {link.revokedAt ? (
-                    <Pill tone="rose">Withdrawn</Pill>
-                  ) : (
-                    <Pill tone="emerald">Active</Pill>
-                  )}
-                  <span className="text-xs text-slate-500">
-                    {link.useCount === 0
-                      ? "not used yet"
-                      : `${link.useCount} update${link.useCount === 1 ? "" : "s"}`}
-                  </span>
-                  <span className="ml-auto">
-                    {link.revokedAt ? null : (
-                      <WithdrawLinkForm linkId={link.id} name={link.agent.fullName} />
-                    )}
-                  </span>
-                </div>
-              ))}
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <FieldWorkerList
+                rows={fieldLinks.map((link) => ({
+                  linkId: link.id,
+                  name: link.agent.fullName,
+                  kind: link.agent.discipline
+                    ? DISCIPLINE_LABEL[link.agent.discipline]
+                    : "Field worker",
+                  revoked: Boolean(link.revokedAt),
+                  useCount: link.useCount,
+                }))}
+                clinicianName={owner.fullName}
+                linksReachable={reachable}
+              />
             </div>
           ) : null}
         </Card>

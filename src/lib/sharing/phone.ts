@@ -103,3 +103,37 @@ export const CALLING_CODES: { code: string; label: string }[] = [
   { code: "32", label: "Belgium (+32)" },
   { code: "31", label: "Netherlands (+31)" },
 ];
+
+/**
+ * Splits a stored international number back into a code and a national part.
+ *
+ * The forms hold the calling code in a `<select>` and the rest in a text box.
+ * A number saved earlier comes back as E.164 — `+2348012345678` — and putting
+ * that whole string into the *national* box left it sitting beside a selector
+ * still reading `+1`: a number displayed as belonging to two countries at once.
+ * It still sent correctly, because `toE164` treats a leading `+` as
+ * authoritative, so nothing failed — it just looked broken, and the moment
+ * somebody tidied the `+` away it silently became a US number.
+ *
+ * Longest code first, because `+1` is a prefix of nothing but `+23` is a prefix
+ * of `+234` and `+233`. An unrecognised country falls back to the whole number
+ * in the text box, where the `+` still wins — worse-looking than a clean split,
+ * and still correct, which is the right way round for a fallback.
+ */
+export function splitE164(stored: string | null | undefined): {
+  code: string;
+  national: string;
+} {
+  const raw = (stored ?? "").trim();
+  if (!raw) return { code: "1", national: "" };
+  if (!raw.startsWith("+")) return { code: "1", national: raw };
+
+  const digits = raw.slice(1).replace(/\D/g, "");
+  const byLongest = [...CALLING_CODES].sort((a, b) => b.code.length - a.code.length);
+  for (const { code } of byLongest) {
+    if (digits.startsWith(code)) {
+      return { code, national: digits.slice(code.length) };
+    }
+  }
+  return { code: "1", national: raw };
+}
