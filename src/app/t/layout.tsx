@@ -3,6 +3,7 @@ import { logout } from "@/lib/auth/actions";
 import { countPendingReviews } from "@/lib/field/reviewQueue";
 import { personaFor } from "@/lib/portal/personas";
 import { Nav } from "@/components/shared/ui";
+import DisciplineBanner from "@/components/therapist/DisciplineBanner";
 
 export const dynamic = "force-dynamic";
 
@@ -44,19 +45,7 @@ export default async function TherapistLayout({ children }: { children: React.Re
           </form>
         }
       />
-      {user.discipline ? null : (
-        <div className="border-b border-amber-300 bg-amber-50">
-          <div className="mx-auto max-w-6xl px-4 py-2 text-sm text-amber-900">
-            Tell us whether you are a Social Case Worker, Nurse Practitioner or something
-            else before filing notes —{" "}
-            <a href="/t/profile" className="font-medium underline">
-              set your discipline
-            </a>
-            . It decides which template you get, what kind of note is written from your
-            submissions, and how this portal is laid out.
-          </div>
-        </div>
-      )}
+      {user.discipline ? null : <DisciplineBanner />}
       <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
     </div>
   );
