@@ -74,6 +74,16 @@ jobs:
         # lint, typecheck and build were all green. Needs no database.
         run: npm run verify:portals
 
+      - name: No clinical document leaves as bytes
+        # The WhatsApp handoff was hardened by replacing `sendDocument` with an
+        # expiring link on every path — except it was not every path. The
+        # caseload roster was missed, so a clinician's whole client list, names
+        # included when ticked, was pushed to Meta as an attachment. Lint,
+        # typecheck, build and the tests were all green, and both CLAUDE.md and
+        # SECURITY.md asserted the migration was finished. The claim is a check
+        # now. Needs no database.
+        run: npm run verify:handoff
+
       - name: The Word export is a file Word will open
         # A `.docx` is a ZIP of XML parts, and it fails the way this repository
         # keeps being bitten: the build is green, the bytes are the right length,

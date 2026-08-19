@@ -14,6 +14,7 @@
     "test": "node --conditions=react-server --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "verify:docx": "node --conditions=react-server --import tsx scripts/verify-docx.ts",
+    "verify:handoff": "node --conditions=react-server --import tsx scripts/verify-handoff.ts",
     "verify:pdf": "node --import tsx scripts/verify-pdf.ts",
     "verify:portals": "node --conditions=react-server --import tsx scripts/verify-portals.ts",
     "verify:templates": "node --import tsx scripts/verify-templates.ts"

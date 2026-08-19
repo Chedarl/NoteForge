@@ -206,7 +206,12 @@ push the PDF into email, onto a memory stick, or back onto paper. So the channel
 stays and two things about it changed.
 
 **A link goes into the chat, never the document.** `sendLink` replaced
-`sendDocument` on every path. Pushing the bytes put clinical material onto
+`sendDocument` on every path — and this file claimed that before it was true.
+The caseload roster was missed, so a clinician's entire client list, names
+included whenever the box was ticked, went to Meta as an attachment while both
+this file and `SECURITY.md` said otherwise. `npm run verify:handoff` asserts
+`sendDocument` has no callers, because a claim nothing checks is a claim that
+drifts. Pushing the bytes put clinical material onto
 Meta's infrastructure and into a phone's cloud backup permanently — no expiry,
 no download ceiling, no way to withdraw it. A link keeps the bytes in the
 practice's own bucket, where all three of those apply, and what survives in a

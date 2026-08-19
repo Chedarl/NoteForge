@@ -7,7 +7,6 @@ import { identityOf } from "@/lib/clients/identity";
 import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import { renderRosterPdf, type RosterRow } from "@/lib/export/rosterPdf";
-import { sendDocument, sendFailureMessage, whatsappConfigured } from "@/lib/whatsapp/send";
 import { normalizeWhatsAppNumber } from "@/lib/sharing/phone";
 import { safeSegment } from "@/lib/export/zip";
 import { writeAudit } from "@/lib/audit";
@@ -39,9 +38,16 @@ export interface RosterState {
     filename: string;
     total: number;
     active: number;
-    whatsapp: { sent: boolean; message: string } | null;
     /** Present when a share link was made — the path that needs no Cloud API. */
     whatsappUrl?: string;
+    /**
+     * The six digits, shown once. Null when the sender chose to send unlocked.
+     *
+     * Must reach the screen. Issuing a passcode and not displaying it would lock
+     * the recipient out of a document the sender believes they have just handed
+     * over — a failure that looks exactly like the link being broken.
+     */
+    passcode?: string | null;
   };
 }
 
@@ -129,47 +135,24 @@ export async function sendClientRoster(
   }
   const destination = typed || practice?.noteWriterWhatsApp || null;
 
-  let whatsapp: { sent: boolean; message: string } | null = null;
-  if (whatsappConfigured()) {
-    const sent = await sendDocument({
-      to: destination ?? "",
-      pdf,
-      filename,
-      // A count and a date. The caption must not name anybody: a WhatsApp
-      // preview shows on a lock screen, and this is a list of patients.
-      caption: `Client list · ${activeCount} active of ${rows.length}`,
-    });
-
-    await writeAudit({
-      practiceId: user.practiceId,
-      actor: user,
-      action: sent.ok
-        ? includeNames
-          ? "roster.whatsapp_sent_with_names"
-          : "roster.whatsapp_sent"
-        : "roster.whatsapp_send_failed",
-      entityType: "client",
-      entityId: user.id,
-      entityLabel: `${rows.length} clients, ${activeCount} active`,
-      changes: {
-        identifiable: { from: null, to: includeNames },
-        scope: { from: null, to: activeOnly ? "active only" : "all clients" },
-        outcome: { from: null, to: sent.ok ? "sent" : sent.reason },
-      },
-    });
-
-    whatsapp = sent.ok
-      ? { sent: true, message: "Client list sent on WhatsApp." }
-      : { sent: false, message: sendFailureMessage(sent) };
-  }
-
   /*
-   * The share link is always made, not only when the Cloud API is missing.
+   * A link, never the document — and this path was the one that still pushed it.
    *
-   * Without it this button did nothing at all on a deployment that has no Meta
-   * Business account — the same gap that left the write screen with no way to
-   * send. With it, the clinician always ends up with something they can press,
-   * and the Cloud API becomes an optimisation rather than a prerequisite.
+   * `sendLink` replaced `sendDocument` everywhere else when the WhatsApp handoff
+   * was hardened, and this call site was missed. So on any deployment with the
+   * Cloud API configured, a clinician's **entire caseload** — every client code,
+   * every status including "Deceased" and "Transferred", every last-session
+   * date, and their first names whenever the box was ticked — was pushed to
+   * Meta as an attachment and left permanently in a chat history and whatever
+   * backs that phone up. That is a larger disclosure than any single session
+   * PDF, which is exactly what the checkbox on this form says.
+   *
+   * The link was already being made below as a fallback for deployments without
+   * the Cloud API. It is now the only route, so the bytes stay in the practice's
+   * own bucket where the expiry, the download ceiling and revocation all apply.
+   *
+   * `sendDocument` remains in `whatsapp/send.ts`, documented as not for clinical
+   * use, and now has no callers.
    */
   const stored = await storeSharedPdf({
     user,
@@ -177,6 +160,41 @@ export async function sendClientRoster(
     documentKind: "roster",
     submissionId: null,
     auditLabel: `${rows.length} clients, ${activeCount} active`,
+    /*
+     * Locked, and the same rule the round share uses: a list carrying names is
+     * locked with no opt-out, a de-identified one is locked by default and the
+     * sender may decline. A caseload is the largest single disclosure this
+     * product can produce, so "bearer-only" — which is what this was — is the
+     * wrong default for it whichever way the name box was set.
+     */
+    requirePasscode: includeNames || formData.get("unlocked") !== "yes",
+  });
+
+  /*
+   * Audited here as well as in `storeSharedPdf`, and not redundantly.
+   *
+   * That helper writes `share.created`, which records that a link was minted.
+   * It does not record the two things a practice is actually asked about a
+   * caseload disclosure: whether it carried names, and whether it was the whole
+   * list or only the active clients. `roster.shared_with_names` stays a distinct
+   * action from `roster.shared` for the same reason the export does.
+   */
+  await writeAudit({
+    practiceId: user.practiceId,
+    actor: user,
+    action: stored.ok
+      ? includeNames
+        ? "roster.shared_with_names"
+        : "roster.shared"
+      : "roster.share_failed",
+    entityType: "client",
+    entityId: user.id,
+    entityLabel: `${rows.length} clients, ${activeCount} active`,
+    changes: {
+      identifiable: { from: null, to: includeNames },
+      scope: { from: null, to: activeOnly ? "active only" : "all clients" },
+      delivery: { from: null, to: "expiring link" },
+    },
   });
 
   let whatsappUrl: string | undefined;
@@ -189,14 +207,21 @@ export async function sendClientRoster(
       // A count and a date. Never a name — this message sits in a chat preview.
       lead: `A NoteForge client list is ready: ${activeCount} active of ${rows.length}.`,
     }).whatsappUrl;
-  } else if (!whatsapp) {
-    // Nothing sent and no link either. Say why rather than claiming success.
+  } else {
+    // No link and nothing else to fall back on now that the document is never
+    // pushed. Say why rather than claiming success.
     return { error: stored.error };
   }
 
   revalidatePath("/t");
 
   return {
-    success: { filename, total: rows.length, active: activeCount, whatsapp, whatsappUrl },
+    success: {
+      filename,
+      total: rows.length,
+      active: activeCount,
+      whatsappUrl,
+      passcode: stored.ok ? stored.share.passcode : null,
+    },
   };
 }
