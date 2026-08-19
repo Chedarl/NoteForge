@@ -131,7 +131,22 @@ export default function IntakeForm({
           submissionId={state.success.submissionId}
           defaultPhone={defaultWhatsApp}
         />
-        <div className="mt-4 flex gap-3 text-sm">
+        <div className="mt-4 flex flex-wrap gap-3 text-sm">
+          {/*
+            Their own copy, without minting a public link.
+            The route has always allowed this — a therapist is an accepted role
+            and is scoped to their own submissions — but nothing on this screen
+            pointed at it, so a clinician who simply wanted the PDF was pushed
+            into creating an expiring link for a stranger to open. The quick
+            path at /t/write has offered this all along; the structured form is
+            where the specification claimed it and it was not there.
+          */}
+          <a
+            href={`/api/export/submission/${state.success.submissionId}`}
+            className="font-medium underline"
+          >
+            Download the PDF
+          </a>
           <Link href="/t/new" className="font-medium underline">
             Write another
           </Link>
