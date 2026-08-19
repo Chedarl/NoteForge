@@ -6,6 +6,7 @@ import { identityOf } from "@/lib/clients/identity";
 import { templatesFor } from "@/lib/intake/disciplines";
 import { practiceNeeds } from "@/lib/intake/practiceNeeds";
 import { previousSubmissionFor } from "@/lib/intake/previous";
+import { PICKER_TAKE, toPickList } from "@/lib/clients/pickList";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,10 @@ export default async function NewNotePage({
         practiceId: user.practiceId,
         ...(user.role === "THERAPIST" ? { primaryTherapistId: user.id } : {}),
       },
-      orderBy: [{ status: "asc" }, { clientCode: "asc" }],
+      // Most recently seen first, so a capped list drops the part of a long
+      // caseload nobody is about to write about. See `pickList.ts`.
+      orderBy: [{ status: "asc" }, { lastEncounterAt: "desc" }, { clientCode: "asc" }],
+      take: PICKER_TAKE,
       select: {
         id: true,
         clientCode: true,
@@ -48,6 +52,8 @@ export default async function NewNotePage({
     }),
   ]);
 
+  const { clients: pickable, capped } = toPickList(clients);
+
   if (!user.discipline) {
     return (
       <EmptyState
@@ -57,7 +63,7 @@ export default async function NewNotePage({
     );
   }
 
-  if (clients.length === 0) {
+  if (pickable.length === 0) {
     return (
       <div className="max-w-2xl">
         <EmptyState
@@ -88,7 +94,7 @@ export default async function NewNotePage({
    * moment later. Changing the dropdown fetches the next one through a server
    * action; this is only the head start.
    */
-  const openingClientId = preselected || clients[0].id;
+  const openingClientId = preselected || pickable[0].id;
   const previous = await previousSubmissionFor({
     practiceId: user.practiceId,
     clientId: openingClientId,
@@ -103,7 +109,8 @@ export default async function NewNotePage({
         photographed paper — there is nothing to transcribe and nothing to verify.
       </p>
       <IntakeForm
-        clients={clients.map((client) => ({
+        capped={capped}
+        clients={pickable.map((client) => ({
           id: client.id,
           clientCode: client.clientCode,
           label: identityOf(client).displayName ?? client.initials,

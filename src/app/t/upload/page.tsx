@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { PICKER_TAKE, toPickList } from "@/lib/clients/pickList";
 import { requireRole } from "@/lib/auth/session";
 import PhotoUpload from "@/components/therapist/PhotoUpload";
 import { readerConfigured } from "@/lib/ai/reader";
@@ -16,7 +17,8 @@ export default async function UploadPage() {
         practiceId: user.practiceId,
         ...(user.role === "THERAPIST" ? { primaryTherapistId: user.id } : {}),
       },
-      orderBy: [{ status: "asc" }, { clientCode: "asc" }],
+      orderBy: [{ status: "asc" }, { lastEncounterAt: "desc" }, { clientCode: "asc" }],
+      take: PICKER_TAKE,
       select: {
         id: true,
         clientCode: true,
@@ -55,7 +57,7 @@ export default async function UploadPage() {
           : "Automatic transcription is not configured on this deployment, so pages will be typed by hand. Everything else works exactly the same."}
       </p>
       <PhotoUpload
-        clients={clients.map((client) => ({
+        clients={toPickList(clients).clients.map((client) => ({
           id: client.id,
           clientCode: client.clientCode,
           label: identityOf(client).displayName ?? client.initials,
