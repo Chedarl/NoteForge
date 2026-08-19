@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/shared/ui";
 import { identityOf } from "@/lib/clients/identity";
 import { templatesFor } from "@/lib/intake/disciplines";
 import { practiceNeeds } from "@/lib/intake/practiceNeeds";
+import { previousSubmissionFor } from "@/lib/intake/previous";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +82,19 @@ export default async function NewNotePage({
   const offered = templatesFor(user.discipline);
   const offeredTemplate = offered.find((kind) => kind === requestedTemplate);
 
+  /*
+   * Fetched on the server for whichever client the page opens on, so the last
+   * encounter is on screen before the first render rather than arriving a
+   * moment later. Changing the dropdown fetches the next one through a server
+   * action; this is only the head start.
+   */
+  const openingClientId = preselected || clients[0].id;
+  const previous = await previousSubmissionFor({
+    practiceId: user.practiceId,
+    clientId: openingClientId,
+    restrictToTherapistId: user.role === "THERAPIST" ? user.id : undefined,
+  });
+
   return (
     <div className="max-w-3xl">
       <h1 className="text-xl font-semibold tracking-tight">Write a note</h1>
@@ -98,6 +112,7 @@ export default async function NewNotePage({
           statusChangedAt: client.statusChangedAt,
         }))}
         preselectedClientId={preselected ?? ""}
+        previous={previous}
         preselectedTemplate={offeredTemplate}
         allowedTemplates={offered}
         needs={needs}

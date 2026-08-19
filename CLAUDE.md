@@ -238,6 +238,35 @@ The unlock proof is a derived cookie — an HMAC only this server can produce,
 scoped to one link's path — so there is no session table and no second database
 round trip on a route that already does an atomic claim.
 
+## Drafts live on the device
+
+`src/lib/forms/draft.ts` keeps an unsent form in `localStorage`, because a
+clinician filling twenty fields on a phone loses the lot to an incoming call,
+and the person that happens to does not file a shorter note — they stop using
+the tool.
+
+Not the server, deliberately: a server-side draft is clinical text about a named
+client, stored before anybody decided it was a record, with its own retention
+question and its own row in an export. That is a bigger decision than "do not
+lose the form".
+
+Four things bound the shared-phone risk: it ages out after 24 hours, it is
+cleared on a successful file, the key includes the client and the template so a
+draft can never be reattached to the wrong person, and it is **offered rather
+than restored** — overwriting a form somebody has already started would be its
+own kind of data loss.
+
+Two bugs found here in a browser, both invisible to every other check:
+
+- **The offer must suspend saving.** Opening the form fires a change event
+  before anybody types, and that empty form was written straight over the draft
+  the page had just offered — so "Put it back" put back nothing. The storage
+  write and the read were each correct in isolation.
+- **`FormData` cannot tell one ticked box from one text field.** Collapsing a
+  single value to a scalar stored a lone tick as a string, and the renderer
+  expects an array, so it silently restored nothing. The hook takes the set of
+  list-valued field names from the caller, which is the only place that knows.
+
 ## Conventions
 
 - **Server-only vs client-safe.** Anything touching the database, a key or a secret gets
