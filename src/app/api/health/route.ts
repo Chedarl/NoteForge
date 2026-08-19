@@ -6,6 +6,7 @@ import { siteUrlConfigured } from "@/lib/email/send";
 import { fieldCryptoConfigured } from "@/lib/crypto/field";
 import { EXPECTED_MIGRATIONS } from "@/lib/db/migrations.generated";
 import { readerConfigured } from "@/lib/ai/reader";
+import { aiDisabled, kimiConfigured } from "@/lib/ai/kimi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -223,6 +224,25 @@ export async function GET() {
        * it — but this is exactly where you would want to be told if it were.
        */
       devAuth: devAuthEnabled(),
+      /*
+       * Whether clinical text can reach a model vendor, and beside `checks`
+       * rather than inside it for the same reason as `devAuth`: "off" is a
+       * perfectly good answer and must never make a deployment report
+       * `ready: false`.
+       *
+       * Three states, not a boolean, because "turned off on purpose" and
+       * "nobody ever configured it" are opposite operational facts that a
+       * boolean would flatten into one. `docs/BAA.md` makes turning this vendor
+       * off the first step before any agreement is paid for — it receives
+       * photographed notes and full submission text, and signs no BAA — so
+       * there has to be a way to confirm it is off **from outside**, without
+       * signing in and without trusting that the right variable was removed.
+       *
+       *   "disabled"   — AI_DISABLED is set. Nothing leaves, whatever keys exist.
+       *   "configured" — a key is present and clinical text can reach Moonshot.
+       *   "none"       — no key set. Same effect as disabled, but by accident.
+       */
+      modelVendor: aiDisabled() ? "disabled" : kimiConfigured() ? "configured" : "none",
       /*
        * Named, not just counted. A migration name is not a secret — it is a
        * folder name in the repository — and it is the difference between "the

@@ -193,9 +193,26 @@ would yield.
 
 The order matters: doing 1 and 2 first buys nothing while 5 is still enabled.
 
-1. **Turn off Moonshot/Kimi.** Unset `KIMI_API_KEY`. Zero cost, zero code, and
-   it removes the vendor that receives the most sensitive material. Verify with
-   `/api/health/ocr`, which reports `NO_KEY`.
+1. **Turn off Moonshot/Kimi — set `AI_DISABLED=1`.** Zero cost, zero code, and
+   it removes the vendor that receives the most sensitive material.
+
+   **Do not do this by unsetting `KIMI_API_KEY`.** An earlier draft of this file
+   said to, and that advice was wrong: **two** variable names are read,
+   `KIMI_API_KEY` and `MOONSHOT_API_KEY`, so a deployment carrying the second
+   stays fully live while every screen and every log looks exactly as it would
+   if the vendor were gone. Reproduced at runtime before this was written — with
+   only `MOONSHOT_API_KEY` set, `/api/health` still reported
+   `modelVendor: "configured"`.
+
+   Turning something off by *removing* things means finding every variable that
+   might carry a key, including one somebody adds next month. `AI_DISABLED=1` is
+   one variable to add and it beats all of them, present and future.
+
+   Verify from outside, without signing in: `/api/health` reports
+   `modelVendor: "disabled"` rather than `"configured"` or `"none"`, and
+   `/api/health/ocr` reports `DISABLED` rather than `NO_KEY` — deliberately
+   different answers, because "we removed this vendor" and "nobody configured
+   it" are opposite facts that a single value would flatten into one.
 2. **Confirm the WhatsApp position in writing** — that only a link travels, and
    that the practice accepts it. It is already true in code; it needs to be
    recorded as a decision rather than a discovery.
@@ -223,17 +240,45 @@ trips:
 
 - The legal entity signing, and who is authorised to sign for it.
 - What the service is used for, in one paragraph.
-- What categories of PHI are involved. For NoteForge that answer is unusually
-  short and worth stating precisely: **a practice-assigned client code, a first
-  name, a surname initial, an optional birth year, and clinical narrative.** No
-  full name, no date of birth, no address, no phone number, no email, no SSN, no
-  member or record number. The mapping from a code to a full identity stays in
-  the practice's own EHR.
+- What categories of PHI are involved — see the block below.
 - Expected volume.
 - Your security contact.
 
-That short PHI list is the product of the data model, and it is the strongest
-thing you have in these conversations. It should lead.
+### The PHI statement — lead with this
+
+Every vendor intake form asks what protected health information is involved.
+NoteForge's answer is unusually short, it is a property of the data model rather
+than a promise, and it is the strongest thing you have in these conversations.
+Paste it verbatim:
+
+> NoteForge holds, for each individual: a practice-assigned client code
+> (e.g. `RVN-0142`), a first name, a surname initial, an optional birth **year**,
+> and clinical narrative about encounters.
+>
+> It does **not** hold: full name, date of birth, address, telephone number,
+> email address, Social Security number, medical record number, health plan or
+> member number, account number, certificate or licence number, vehicle or device
+> identifier, URL, IP address, biometric identifier, or full-face photograph.
+>
+> The mapping from a client code to a full identity is not in NoteForge. It
+> remains in the practice's own electronic health record, where it is already
+> held and already covered.
+>
+> The first name is encrypted at the column level (AES-256-GCM, random IV per
+> value) with the key held in the application environment and never in the
+> database, so a compromised database credential yields ciphertext for the only
+> directly identifying field. Exports omit names by default and record
+> separately in the audit trail when an identifiable export was taken.
+
+Two things to be straight about when you send it, because a vendor's security
+reviewer will raise them and it is better to have said them first:
+
+- **Clinical narrative can identify somebody through its content alone.** A
+  short list of identifiers is a real reduction in exposure, not an elimination
+  of it. Do not present this as de-identified data — it is not, and claiming so
+  is the kind of overstatement that loses a reviewer's trust on everything else.
+- **Note text is not yet column-encrypted.** The first name is; the narrative is
+  not. Say so, and say it is scheduled — see the section above.
 
 ## Status
 

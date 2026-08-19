@@ -49,6 +49,13 @@ These are load-bearing. Changing one is a product decision, not a refactor.
    top of `src/lib/ai/kimi.ts`. With no `KIMI_API_KEY` the whole product still works — a
    page just gets typed by hand, which is the process this replaces.
 
+   That property is what makes `AI_DISABLED=1` a real off switch: one variable removes the
+   model vendor from a deployment with no code change and no loss of function beyond
+   convenience, which `docs/BAA.md` makes the first step before any agreement is paid for.
+   It is checked in `kimiKeySource`, the single place a key is resolved, so it beats every
+   key — **including `MOONSHOT_API_KEY`, which is also read.** Deleting one key name is not
+   an off switch and looks identical to one; that is the whole reason this exists.
+
 ## Where things are
 
 ```

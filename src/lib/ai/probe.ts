@@ -1,7 +1,15 @@
 import "server-only";
 
 import { deflateSync } from "node:zlib";
-import { kimiConfigured, kimiModel, kimiKeySource, kimiBaseUrl, unreadKeyVariables } from "@/lib/ai/kimi";
+import {
+  kimiConfigured,
+  kimiModel,
+  kimiKeySource,
+  kimiBaseUrl,
+  unreadKeyVariables,
+  aiDisabled,
+  AI_DISABLE_VARIABLE,
+} from "@/lib/ai/kimi";
 
 /**
  * Does the handwriting reader actually work?
@@ -26,6 +34,16 @@ import { kimiConfigured, kimiModel, kimiKeySource, kimiBaseUrl, unreadKeyVariabl
  */
 
 export type ProbeFailure =
+  /**
+   * Turned off on purpose, with `AI_DISABLED`.
+   *
+   * Distinct from `NO_KEY`, and the distinction is the point of having it: this
+   * endpoint exists to answer "is the handwriting reader actually working", and
+   * "nobody configured it" and "we deliberately removed this vendor because it
+   * signs no BAA" are opposite answers that would otherwise look identical. One
+   * is a deployment to fix; the other is a control working.
+   */
+  | "DISABLED"
   | "NO_KEY"
   | "UNAUTHORIZED"
   | "MODEL_UNAVAILABLE"
@@ -185,6 +203,18 @@ export async function probeHandwritingReader(): Promise<ReaderProbe> {
   };
   const started = Date.now();
   const ms = () => Date.now() - started;
+
+  if (aiDisabled()) {
+    return {
+      ok: false,
+      reason: "DISABLED",
+      detail:
+        `${AI_DISABLE_VARIABLE} is set, so no clinical text leaves this deployment to a model vendor. ` +
+        "Handwriting is typed by hand and duplicate detection runs on token overlap alone. Unset it to turn the reader back on.",
+      ...context,
+      ms: ms(),
+    };
+  }
 
   if (!kimiConfigured()) {
     const unread = context.unreadVariables;

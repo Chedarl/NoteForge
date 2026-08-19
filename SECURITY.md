@@ -165,6 +165,12 @@ is a change to one call site in `src/lib/intake/quickActions.ts`.
 2. Replace the OCR provider with one under a BAA, or bring it in-house. This costs one
    file: implement `readHandwriting` in `src/lib/ai/reader.ts`. Nothing else in the
    codebase knows which engine is being used.
+
+   Until then, **set `AI_DISABLED=1`** — it removes the vendor outright and costs
+   nothing, because every AI call already degrades to null. Do not do this by deleting
+   the key: two variable names are read (`KIMI_API_KEY`, `MOONSHOT_API_KEY`), so removing
+   one leaves the vendor live while every screen looks as though it is gone. `/api/health`
+   reports `modelVendor` so the state can be confirmed from outside.
 3. Decide about drafting (`src/lib/ai/noteDraft.ts`) and pair classification
    (`src/lib/ai/classify.ts`). Both send note text to the model provider. Both degrade
    cleanly to nothing when `KIMI_API_KEY` is unset — the product still works, a person
