@@ -368,6 +368,12 @@ enum TemplateKind {
   /// plan. Kept separate from SOAP because the fields a nurse practitioner must
   /// record — and therefore the fields the export must carry — are not the same.
   NURSING
+  /// Situation, Intervention, Response, Plan — the shape the practice's own
+  /// case-management notes are written in, for both telehealth and in-person
+  /// community contacts. Added because the notes their reviewers actually read
+  /// are in this format, and a generated note in the wrong shape is one a
+  /// reviewer has to rewrite by hand, which is the work this removes.
+  SIRP
 }
 
 enum SubmissionState {

@@ -7,6 +7,7 @@ import { requireRole } from "@/lib/auth/session";
 import { submitEncounter } from "@/lib/intake/submit";
 import { writeAudit } from "@/lib/audit";
 import { readHandwriting, readerConfigured } from "@/lib/ai/reader";
+import { autoDeliverSubmission } from "@/lib/intake/autoDeliver";
 import { createAdminClient, BUCKET_PAGES } from "@/lib/supabase/admin";
 import { logSafe } from "@/lib/redact";
 import type { Prisma } from "@prisma/client";
@@ -14,7 +15,22 @@ import type { Prisma } from "@prisma/client";
 export interface PhotoState {
   error?: string;
   blocked?: { message: string };
-  success?: { submissionId: string; pages: number; transcribed: number };
+  success?: {
+    submissionId: string;
+    pages: number;
+    transcribed: number;
+    /**
+     * What happened after the reader ran.
+     *
+     * `delivered` means the note was written and sent without anybody being
+     * asked to confirm anything — the behaviour this path exists for. Anything
+     * else carries the reason it could not be, and the screen says which rather
+     * than implying something went out. The submission is saved either way.
+     */
+    delivery:
+      | { delivered: true; passcode: string | null; url: string; gaps: string[] }
+      | { delivered: false; message: string };
+  };
 }
 
 /**
@@ -94,6 +110,28 @@ export async function submitPhotoPages(
     transcribed = await transcribePages(result.submissionId);
   }
 
+  /*
+   * Straight out, without stopping at the verification queue.
+   *
+   * The deliberate change the practice asked for: a photographed update should
+   * reach the note writer immediately, with a copy back to whoever sent it,
+   * rather than waiting for somebody to confirm a transcript.
+   *
+   * `autoDeliverSubmission` refuses rather than sends when the reader returned
+   * nothing — an empty note carrying a client code is worse for the person
+   * receiving it than a queue, because they cannot tell it from a quiet week.
+   * In that case the submission stays exactly where a human can type it.
+   */
+  const outcome = await autoDeliverSubmission(result.submissionId, user);
+  const delivery = outcome.ok
+    ? {
+        delivered: true as const,
+        passcode: outcome.share.passcode,
+        url: outcome.share.url,
+        gaps: outcome.gaps,
+      }
+    : { delivered: false as const, message: outcome.message };
+
   await writeAudit({
     practiceId: user.practiceId,
     actor: user,
@@ -104,7 +142,9 @@ export async function submitPhotoPages(
   });
 
   revalidatePath("/s");
-  return { success: { submissionId: result.submissionId, pages: paths.length, transcribed } };
+  return {
+    success: { submissionId: result.submissionId, pages: paths.length, transcribed, delivery },
+  };
 }
 
 /** Reads each page and stores the transcript. Returns how many succeeded. */

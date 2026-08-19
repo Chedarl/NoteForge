@@ -79,9 +79,73 @@ export default function PhotoUpload({
         </h2>
         <p className="mt-1 text-sm text-emerald-800">
           {state.success.transcribed > 0
-            ? `${state.success.transcribed} transcribed automatically. A person checks every transcript against the original before any note is written.`
-            : "They will be transcribed by a person before any note is written."}
+            ? `${state.success.transcribed} page${state.success.transcribed === 1 ? "" : "s"} read automatically.`
+            : "Nothing could be read from these automatically."}
         </p>
+
+        {/*
+          What actually happened next, said plainly.
+
+          The screen used to promise "a person checks every transcript before
+          any note is written", which stopped being true the moment this path
+          started sending unattended. A success box that describes a workflow
+          the product no longer runs is worse than one that says nothing.
+        */}
+        {state.success.delivery.delivered ? (
+          <div className="mt-3 rounded-lg border border-teal-300 bg-teal-50 p-3.5">
+            <p className="text-sm font-semibold text-teal-900">
+              The note has been written and sent.
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-teal-800">
+              A copy is on its way to you as well. It was written from what you sent and{" "}
+              <strong>nobody has signed it yet</strong> — it stays a draft until somebody
+              puts their name to it.
+            </p>
+
+            {state.success.delivery.passcode ? (
+              <>
+                <p className="mt-2.5 text-xs leading-relaxed text-teal-800">
+                  The link is locked. Give these six digits to the recipient{" "}
+                  <strong>some other way</strong> — in the same message as the link they do
+                  nothing.
+                </p>
+                <p className="my-2 text-center font-mono text-3xl font-semibold tracking-[0.28em] tabular-nums text-slate-900">
+                  {state.success.delivery.passcode}
+                </p>
+                <p className="text-center text-xs text-teal-800">
+                  This is the only time it is shown.
+                </p>
+              </>
+            ) : null}
+
+            {/*
+              The drafter reports what the source did not support rather than
+              filling it in. Shown here because the person who was actually in
+              the room is the only one who can close a gap, and they are looking
+              at this screen right now.
+            */}
+            {state.success.delivery.gaps.length > 0 ? (
+              <div className="mt-3 border-t border-teal-200 pt-2.5">
+                <p className="text-xs font-semibold text-teal-900">
+                  Not covered by what you sent:
+                </p>
+                <ul className="mt-1 list-disc pl-4 text-xs leading-relaxed text-teal-800">
+                  {state.success.delivery.gaps.map((gap) => (
+                    <li key={gap}>{gap}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3.5">
+            <p className="text-sm font-semibold text-amber-900">Not sent automatically.</p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-800">
+              {state.success.delivery.message}
+            </p>
+          </div>
+        )}
+
         <ShareOnWhatsApp
           submissionId={state.success.submissionId}
           defaultPhone={defaultWhatsApp}

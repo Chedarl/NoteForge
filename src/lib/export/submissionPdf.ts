@@ -52,6 +52,16 @@ export interface SubmissionPdfOptions {
    */
   includeName: boolean;
   /**
+   * Render the produced note's body instead of what the clinician submitted.
+   *
+   * The two are different documents and both are wanted. The submission PDF is
+   * "what we were given"; with this set it becomes "what was written from it",
+   * which is what a note writer receiving an automatically generated note needs
+   * to read. Falls back to the submission's own fields when no note exists yet,
+   * so a caller cannot end up with a page of empty sections.
+   */
+  fromNote?: boolean;
+  /**
    * When set, the submission must either have been recorded by this user or
    * belong to a client they hold. Staff pass nothing and see the whole practice.
    *
@@ -138,6 +148,7 @@ async function assembleSubmissionData(
     },
     include: {
       client: true,
+      note: { select: { bodyEnc: true, state: true, aiAssisted: true, version: true } },
       submittedBy: { select: { fullName: true, role: true, discipline: true } },
       pages: { orderBy: { pageNumber: "asc" } },
       flags: { where: { resolution: "OPEN" }, select: { kind: true, detailEnc: true } },
@@ -154,8 +165,11 @@ async function assembleSubmissionData(
   // `renderFieldValue` rather than a string check: a picker's answer is an
   // array and a severity field's is an object, and both used to print as
   // "Not recorded." on a page the note writer works from.
+  const noteBody = options.fromNote ? openJson(submission.note?.bodyEnc) : null;
+  const source = noteBody && Object.keys(noteBody).length > 0 ? noteBody : raw;
+
   const sections: PdfSection[] = template.fields.map((field) => {
-    const rendered = renderFieldValue(raw[field.id], field);
+    const rendered = renderFieldValue(source[field.id], field);
     return { label: field.label, value: rendered || null };
   });
 

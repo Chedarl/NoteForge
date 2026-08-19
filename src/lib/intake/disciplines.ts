@@ -59,12 +59,15 @@ export const TEMPLATES_FOR_DISCIPLINE: Record<Discipline, TemplateKind[]> = {
   // A field contact is written as prose, not as a structured assessment. A
   // coach standing outside somebody's house is recording what happened, and
   // asking them to pick a template first is how the update never gets filed.
-  RECOVERY_COACH: ["NARRATIVE", "CASE_MANAGEMENT"],
-  SOCIAL_CASE_WORKER: ["CASE_MANAGEMENT", "NARRATIVE", "SOAP", "DAP"],
+  RECOVERY_COACH: ["NARRATIVE", "SIRP", "CASE_MANAGEMENT"],
+  // SIRP leads for case workers: it is the shape their own notes are written in
+  // and the shape their reviewers read, so it is the one that produces a
+  // document nobody has to reformat.
+  SOCIAL_CASE_WORKER: ["SIRP", "CASE_MANAGEMENT", "NARRATIVE", "SOAP", "DAP"],
   NURSE_PRACTITIONER: ["NURSING", "SOAP", "NARRATIVE", "DAP"],
-  THERAPIST: ["SOAP", "DAP", "BIRP", "NARRATIVE"],
-  COUNSELLOR: ["SOAP", "DAP", "BIRP", "NARRATIVE"],
-  OTHER: ["SOAP", "DAP", "BIRP", "NARRATIVE", "CASE_MANAGEMENT", "NURSING"],
+  THERAPIST: ["SOAP", "DAP", "BIRP", "SIRP", "NARRATIVE"],
+  COUNSELLOR: ["SOAP", "DAP", "BIRP", "SIRP", "NARRATIVE"],
+  OTHER: ["SIRP", "SOAP", "DAP", "BIRP", "NARRATIVE", "CASE_MANAGEMENT", "NURSING"],
 };
 
 export function templatesFor(discipline: Discipline | null): TemplateKind[] {

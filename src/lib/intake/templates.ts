@@ -478,6 +478,67 @@ export const TEMPLATES: Record<TemplateKind, Template> = {
   },
 
   /**
+   * Situation, Intervention, Response, Plan.
+   *
+   * The shape the practice's own case-management notes are actually written in
+   * — the samples supplied cover both telehealth and in-person community
+   * contacts, and every one of them is these four headings in this order.
+   *
+   * It exists because a generated note in the wrong shape is a note a reviewer
+   * rewrites by hand, which is the work this product is supposed to remove. The
+   * §5 PDF, the Word export and the note editor all read templates generically,
+   * so adding the shape is enough to make every one of them produce it.
+   *
+   * Deliberately four prose fields and no pickers. The samples are continuous
+   * narrative of 80–150 words a section: a picker would produce a note that does
+   * not look like the ones a reviewer has been reading for years, which is the
+   * only thing this template is for. The header fields sit above them so the
+   * encounter type still names the file and the modality is on the record —
+   * telehealth versus in-person is the first thing these notes state.
+   */
+  SIRP: {
+    kind: "SIRP",
+    name: "Situation, intervention, response, plan",
+    description:
+      "The four-part case management note: what was happening, what you did, how they responded, what is next.",
+    fields: [
+      ...commonHeader("This contact"),
+      {
+        id: "situation",
+        label: "Situation",
+        hint: "Why you met and what state things were in. Name the barrier that is still live — what has improved, and what is still getting in the way.",
+        required: true,
+        rows: 5,
+        section: "The contact",
+      },
+      {
+        id: "intervention",
+        label: "Intervention",
+        hint: "What you actually did, in order. Where you met them, what you reviewed, what you asked them to practise, and how you redirected when it did not land the first time.",
+        required: true,
+        rows: 8,
+        section: "The contact",
+      },
+      {
+        id: "response",
+        label: "Response",
+        hint: "What they said and did in reply — including the part that did not work. A response that reports only success is one nobody downstream believes.",
+        required: true,
+        rows: 5,
+        section: "The contact",
+      },
+      {
+        id: "plan",
+        label: "Plan",
+        hint: "What you and they will do next session. One concrete thing, not a restatement of the goal.",
+        required: true,
+        rows: 3,
+        section: "The contact",
+      },
+    ],
+  },
+
+  /**
    * Social case work.
    *
    * Built around what a case management note has to be able to evidence:
