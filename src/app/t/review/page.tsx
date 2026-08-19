@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/auth/session";
 import { pendingReviews } from "@/lib/field/reviewQueue";
 import { identityOf } from "@/lib/clients/identity";
+import { openText } from "@/lib/crypto/text";
 import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { fmtDate } from "@/lib/utils";
@@ -53,7 +54,7 @@ export default async function ReviewPage() {
                   : "Field worker"
               }
               when={fmtDate(submission.encounterDate)}
-              text={submission.rawText}
+              text={openText(submission.rawTextEnc) ?? ""}
             />
           ))}
         </div>

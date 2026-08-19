@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { sealText } from "@/lib/crypto/text";
 import { requireRole } from "@/lib/auth/session";
 import { submitEncounter } from "@/lib/intake/submit";
 import { writeAudit } from "@/lib/audit";
@@ -109,7 +110,7 @@ export async function submitPhotoPages(
 /** Reads each page and stores the transcript. Returns how many succeeded. */
 async function transcribePages(submissionId: string): Promise<number> {
   const pages = await prisma.submissionPage.findMany({
-    where: { submissionId, ocrText: null },
+    where: { submissionId, ocrTextEnc: null },
     orderBy: { pageNumber: "asc" },
   });
 
@@ -125,7 +126,7 @@ async function transcribePages(submissionId: string): Promise<number> {
       await prisma.submissionPage.update({
         where: { id: page.id },
         data: {
-          ocrText: result.text,
+          ocrTextEnc: sealText(result.text),
           ocrBlocks: result.blocks as unknown as Prisma.InputJsonValue,
           ocrConfidence: result.minConfidence,
           ocrProvider: result.provider,

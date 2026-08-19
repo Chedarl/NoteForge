@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { openText } from "@/lib/crypto/text";
 import { requireRole } from "@/lib/auth/session";
 import { identityOf } from "@/lib/clients/identity";
 import { displayPolicyFor } from "@/lib/clients/displayPolicy";
@@ -90,7 +91,7 @@ export async function sendClientRoster(
       initials: client.initials,
       status: STATUS_LABEL[client.status],
       statusSince: iso(client.statusChangedAt) ?? "unknown",
-      statusReason: client.statusReason,
+      statusReason: openText(client.statusReasonEnc),
       lastSession: iso(client.lastEncounterAt),
       submissions: client._count.submissions,
     };

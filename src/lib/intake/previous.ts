@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { openJson } from "@/lib/crypto/text";
 import { TEMPLATES, encounterTypeOf, renderFieldValue } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import { STATUS_LABEL } from "@/lib/clients/labels";
@@ -129,7 +130,7 @@ export async function previousSubmissionFor(args: {
 
   const kind = previous.templateKind as TemplateKind;
   const template = TEMPLATES[kind];
-  const raw = (previous.fields ?? {}) as Record<string, unknown>;
+  const raw = openJson(previous.fieldsEnc);
 
   const wanted = HIGHLIGHTS[kind] ?? [];
   const facts: PreviousFact[] = [];

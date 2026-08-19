@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { openText } from "@/lib/crypto/text";
 import type { Client, ClientStatus } from "@prisma/client";
 
 /**
@@ -72,7 +73,7 @@ const MESSAGES: Record<Exclude<ClientStatus, "ACTIVE">, string> = {
     "This client is not accepting new notes. The reason recorded on their status says why — ask the practice owner if it is not clear.",
 };
 
-export function verdictFor(client: Pick<Client, "status" | "statusChangedAt" | "statusReason">): GuardVerdict {
+export function verdictFor(client: Pick<Client, "status" | "statusChangedAt" | "statusReasonEnc">): GuardVerdict {
   if (statusAcceptsSubmissions(client.status)) {
     return { allowed: true, status: client.status };
   }
@@ -81,7 +82,7 @@ export function verdictFor(client: Pick<Client, "status" | "statusChangedAt" | "
     status: client.status,
     message: MESSAGES[client.status as Exclude<ClientStatus, "ACTIVE">],
     since: client.statusChangedAt,
-    reason: client.statusReason,
+    reason: openText(client.statusReasonEnc),
   };
 }
 

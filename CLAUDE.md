@@ -293,6 +293,50 @@ that is not a field id of that template. Note that the seed leaves existing
 submissions alone, so re-running it does not fix rows already written: delete
 them first.
 
+## Clinical text is encrypted, and a grep over the dump is why
+
+`src/lib/crypto/text.ts` seals every column carrying narrative — `rawText`,
+`normalizedText`, `fields`, `Note.body`, `ocrText`, `verifiedText`,
+`SubmissionFlag.detail`, `Client.statusReason` and `ClientStatusEvent.reason`.
+The schema names them `…Enc` while `@map` keeps the database column names, so
+the rename is compile-time only: no data migration, and a deployment running
+older code mid-rollout still reads its own rows.
+
+**The rename is the enforcement.** Renaming the TypeScript field broke all
+~110 call sites and the compiler listed every one, the same technique the
+`identityOf` refactor used. Leaving the names alone would have compiled
+perfectly and rendered `[object Object]` or "not recorded" everywhere.
+
+Four things are load-bearing:
+
+- **`openText` passes legacy plaintext through unchanged.** Every row written
+  before this is plaintext and there is no instant when they all convert.
+  Removing that path would blank every historical note.
+- **A failed decryption returns null, never the ciphertext.** For a name,
+  falling back to the client code is fine. Handing a note writer a page of
+  base64 would reach a PDF, a WhatsApp link and an export with nothing to say it
+  had failed.
+- **`contentHash` stays a digest of the plaintext.** It is layer 1 of the
+  detector and has to stay comparable with rows written before encryption.
+- **The trigram index is gone.** Nothing ever queried `normalizedText` —
+  `detectDuplicates` selects by client and date and tokenises eight rows in
+  memory — so the index was pure write cost, and over ciphertext it could not
+  work at all. That misreading is what had this recorded as blocked for months.
+
+**`npm run verify:at-rest` dumps the database and greps it, and it earned itself
+immediately.** Three columns were still plaintext after the obvious ones were
+sealed, with lint, typecheck, build and every unit test green:
+`SubmissionFlag.detail` (the classifier writes "records suicidal ideation denied
+on direct questioning"), `Client.statusReason`, and `ClientStatusEvent.reason` —
+the append-only copy of the same sentence, which survived even after the client
+column was fixed. None were in the plan, because the plan surveyed the obvious
+columns. Grep the artefact.
+
+One trap found by reading rather than by any tool: **`createMany` with a
+`.map()` defeats TypeScript's excess-property check.** `persistFlags` kept
+writing `detail:` after the column became `detailEnc`, compiled cleanly, and
+would have silently dropped the explanation from every duplicate flag.
+
 ## Safe mode is a parameter, not a lookup
 
 `Practice.safeMode` means this practice never displays, prints or exports a

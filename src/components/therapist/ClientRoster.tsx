@@ -7,6 +7,7 @@ import StatusChanger from "@/components/therapist/StatusChanger";
 import { Card, EmptyState, Pill, SectionTitle, StatusBadge } from "@/components/shared/ui";
 import { fmtDate, ageLabel } from "@/lib/utils";
 import { identityOf } from "@/lib/clients/identity";
+import { openText } from "@/lib/crypto/text";
 import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 
 /**
@@ -169,7 +170,7 @@ export default async function ClientRoster({ user }: { user: User }) {
                 <StatusBadge status={client.status} />
                 <div className="max-w-md text-xs text-slate-500">
                   Since {fmtDate(client.statusChangedAt)}
-                  {client.statusReason ? ` — ${client.statusReason}` : ""}
+                  {openText(client.statusReasonEnc) ? ` — ${openText(client.statusReasonEnc)}` : ""}
                 </div>
                 <div className="ml-auto">
                   <StatusChanger clientId={client.id} current={client.status} />

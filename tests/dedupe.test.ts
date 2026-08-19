@@ -15,6 +15,7 @@
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "@/lib/prisma";
+import { openText, isSealed } from "@/lib/crypto/text";
 import { submitEncounter } from "@/lib/intake/submit";
 import { flattenFields } from "@/lib/intake/templates";
 import { makeFixture, nursingFields, type Fixture } from "./_setup";
@@ -99,14 +100,28 @@ describe("hashing, through the real intake door", () => {
 
     const rows = await prisma.submission.findMany({
       where: { id: { in: [first.submissionId, second.submissionId] } },
-      select: { contentHash: true, rawText: true, normalizedText: true },
+      select: { contentHash: true, rawTextEnc: true, normalizedTextEnc: true },
     });
 
     assert.equal(rows.length, 2);
     assert.notEqual(rows[0].contentHash, rows[1].contentHash);
     for (const row of rows) {
-      assert.ok(row.rawText.length > 40, "a picker-carrying submission must not flatten to nothing");
-      assert.ok(row.normalizedText.length > 0, "and the token index must not be empty either");
+      // Read through `openText`, because the column holds an envelope now. The
+      // assertion is unchanged in substance: a picker-only submission must not
+      // flatten to nothing, which is the bug that once made every one of them
+      // hash identically.
+      const raw = openText(row.rawTextEnc) ?? "";
+      assert.ok(raw.length > 40, "a picker-carrying submission must not flatten to nothing");
+      assert.ok(
+        (openText(row.normalizedTextEnc) ?? "").length > 0,
+        "and the token index must not be empty either"
+      );
+
+      // And the column itself must not be readable. This is the property the
+      // whole change exists for, asserted against what the database actually
+      // holds rather than against the helper that wrote it.
+      assert.notEqual(row.rawTextEnc, raw, "the stored value must not be the plaintext");
+      assert.ok(isSealed(row.rawTextEnc), "the stored value must be an envelope");
     }
   });
 

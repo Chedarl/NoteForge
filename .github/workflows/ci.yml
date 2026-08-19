@@ -107,6 +107,24 @@ jobs:
         # the `ci` database.
         run: npm test
 
+      - name: No clinical text is readable in a database dump
+        # The check that actually found things. Column encryption was written,
+        # type-checked, linted, built and unit-tested — and three columns were
+        # still plaintext afterwards: SubmissionFlag.detail (holding the
+        # classifier's "records suicidal ideation denied on direct
+        # questioning"), Client.statusReason, and ClientStatusEvent.reason,
+        # which survived even after the client column had been sealed.
+        #
+        # None were in the plan, because the plan surveyed the obvious columns.
+        # Grepping the artefact is the only method that finds the column nobody
+        # thought of — the same lesson as unzipping the export.
+        #
+        # Seeds first: the phrases asserted on are the seed's own invented
+        # clients, which is what makes them safe to keep in a repository.
+        run: |
+          npx prisma db seed
+          npm run verify:at-rest
+
       - name: Migrations apply with only the integration's variables
         # The deployment platform may supply POSTGRES_PRISMA_URL and no
         # DATABASE_URL at all — that is what the Supabase↔Vercel integration

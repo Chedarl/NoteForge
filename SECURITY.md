@@ -50,6 +50,35 @@ Consequences worth knowing:
 - Lose the key and the names are gone — and nothing else is. No code, note, submission,
   flag or audit row depends on them.
 
+**Clinical text is encrypted at the column level too.** Not only the client's
+name: `Submission.rawText`, `normalizedText` and `fields`, `Note.body`,
+`SubmissionPage.ocrText` and `verifiedText`, `SubmissionFlag.detail`,
+`Client.statusReason` and `ClientStatusEvent.reason` are all AES-256-GCM with a
+random IV per value (`src/lib/crypto/text.ts`). A leaked database password, a
+misconfigured backup or a support engineer with production access now yields
+ciphertext for the narrative as well as the name.
+
+This was previously listed here as blocked, on the grounds that the duplicate
+detector searches the note text. **It does not.** `detectDuplicates` selects
+candidates by `clientId` and an encounter-date window — indexed columns, no text
+— takes at most eight rows and tokenises in memory. No query has ever read
+`normalizedText`, and the pg_trgm index over it has been dropped.
+
+Three things worth knowing:
+
+- **Rows written before this change stay readable until backfilled.**
+  `openText` passes non-envelope values through unchanged, so nothing breaks
+  mid-rollout. `npm run encrypt:existing -- --commit` seals them; it is
+  idempotent and safe to re-run.
+- **`contentHash` is deliberately still a digest of the plaintext.** It is the
+  exact-match layer of the detector and has to stay comparable with older rows.
+  A digest of a whole document's sorted token bag is not invertible.
+- **`npm run verify:at-rest` dumps the database and greps it.** That check is
+  what found three of these columns — `SubmissionFlag.detail`,
+  `Client.statusReason` and `ClientStatusEvent.reason` were all still plaintext
+  after the obvious columns had been sealed, with lint, typecheck, build and the
+  unit tests all green. It runs in CI.
+
 **Exports do not include names by default.** The download is the moment material leaves
 the controlled environment. Names are an explicit checkbox, the UI states what it makes
 the bundle, and the audit trail records `export.downloaded_with_names` distinctly from
@@ -139,18 +168,6 @@ is a change to one call site in `src/lib/intake/quickActions.ts`.
 - Business Associate Agreements. Nothing in code can substitute. `docs/BAA.md` is the
   register: every third party, what reaches it, whether it will sign, and the order to
   deal with them in.
-- Encryption of *note text* at the column level. Client names are encrypted; the notes
-  themselves are not. Supabase encrypts at rest at the volume level, so a compromised
-  database credential still reads plaintext clinical narrative. This is the largest
-  remaining gap.
-
-  This entry used to say the job was blocked because the duplicate detector searches the
-  note text. **That was wrong.** `detectDuplicates` selects its candidates by `clientId`
-  and an encounter-date window — indexed columns, no text — takes at most eight rows, and
-  tokenises `rawText` in memory. No query in the codebase reads the text, and the pg_trgm
-  GIN index on `normalizedText` is unused. Encryption therefore costs decrypting eight
-  rows per submission, and the index can be dropped rather than worked around. Scheduled
-  as ordinary work, not carried as blocked.
 - Retention and deletion schedules. The schema keeps everything forever, which is right
   for audit and wrong for data minimisation past the practice's retention period.
 - Separation of psychotherapy notes from progress notes as distinct record types. The

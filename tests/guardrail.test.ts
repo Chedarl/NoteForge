@@ -15,6 +15,7 @@
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "@/lib/prisma";
+import { openText, sealText } from "@/lib/crypto/text";
 import { submitEncounter } from "@/lib/intake/submit";
 import { makeClient, makeFixture, nursingFields, type Fixture } from "./_setup";
 import type { ClientStatus } from "@prisma/client";
@@ -87,8 +88,12 @@ describe("the status guardrail", () => {
       assert.ok(kept, "the submission must still exist");
       assert.equal(kept.state, "BLOCKED");
       assert.ok(
-        kept.rawText.includes("must survive"),
+        (openText(kept.rawTextEnc) ?? "").includes("must survive"),
         "the clinician's own words must still be readable"
+      );
+      assert.ok(
+        !kept.rawTextEnc.includes("must survive"),
+        "and must not be readable in the column itself"
       );
       assert.ok(
         kept.flags.some((flag) => flag.kind === "STATUS_BLOCK"),
@@ -145,7 +150,7 @@ describe("the status guardrail", () => {
      */
     await prisma.client.update({
       where: { id: client.id },
-      data: { status: "DECEASED", statusReason: "Changed after the form was opened" },
+      data: { status: "DECEASED", statusReasonEnc: sealText("Changed after the form was opened") },
     });
 
     const result = await submitEncounter({

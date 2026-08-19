@@ -172,22 +172,30 @@ the *browser vendor* — Chrome historically sent audio to Google. Check the
 target browsers before relying on "it is on-device", and prefer typing where the
 answer is unclear or unknown.
 
-## The gap that is code, not contract
+## The gap that was code, not contract — now closed
 
-`SECURITY.md` lists note-text column encryption as the largest remaining
-technical gap and says it would break the duplicate detector. **That reason is
-wrong**, and it matters because it has been treated as a blocker:
+An earlier draft of this file said `SECURITY.md` listed note-text column
+encryption as blocked because the duplicate detector searches that text, and
+that the reason was wrong. It was, and the work is now done.
 
-`detectDuplicates` selects its candidates by `clientId` and an encounter-date
-window — indexed columns, no text — takes at most eight rows, and then tokenises
-`rawText` **in memory**. It never queries the text. The pg_trgm GIN index on
-`normalizedText` is not used by any query in the codebase.
+Every column carrying clinical narrative is AES-256-GCM with a random IV per
+value: `Submission.rawText`, `normalizedText` and `fields`, `Note.body`,
+`SubmissionPage.ocrText` and `verifiedText`, `SubmissionFlag.detail`,
+`Client.statusReason` and `ClientStatusEvent.reason`. A leaked database
+password, a misconfigured backup or a support engineer with production access
+now yields ciphertext.
 
-So encrypting the clinical text columns costs at most decrypting eight rows per
-submission, which is nothing, and the trigram index can be dropped rather than
-worked around. This should be scheduled as ordinary work rather than carried as
-a blocked item. It is the single largest reduction in what a Supabase breach
-would yield.
+Three of those columns were found by dumping the database and grepping it, after
+the obvious ones had been sealed and everything was green. `npm run
+verify:at-rest` is that grep, and it runs in CI.
+
+**What this changes in a vendor conversation.** The Supabase entry above says
+column encryption is what makes a breach of that vendor survivable. That
+sentence now covers the notes, not only the name — which is the difference
+between "an attacker gets a client code and some ciphertext" and "an attacker
+gets a clinical record". Say it plainly, and pair it with the honest caveat: the
+key lives in the application environment, so an attacker who takes the
+application as well as the database has both halves.
 
 ## Sequence
 

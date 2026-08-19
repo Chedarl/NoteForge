@@ -13,5 +13,6 @@ export const EXPECTED_MIGRATIONS: readonly string[] = [
   "20260819120000_share_passcode",
   "20260819130000_client_status_other",
   "20260819140000_submission_processed",
-  "20260819150000_practice_safe_mode"
+  "20260819150000_practice_safe_mode",
+  "20260819180000_drop_trigram_index"
 ];

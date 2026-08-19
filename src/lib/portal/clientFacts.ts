@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { openJson } from "@/lib/crypto/text";
 import { labelsForNeeds, type NeedDefinition } from "@/lib/intake/needs";
 import { TEMPLATES, isSeverityValue } from "@/lib/intake/templates";
 import type { ClientFactKey } from "@/lib/portal/personas";
@@ -150,7 +151,7 @@ export async function loadClientFacts(
           // The latest of each kind per client, in one round trip.
           distinct: ["clientId", "templateKind"],
           orderBy: { encounterDate: "desc" },
-          select: { clientId: true, templateKind: true, fields: true },
+          select: { clientId: true, templateKind: true, fieldsEnc: true },
         })
       : Promise.resolve([]),
     wantsCount
@@ -176,7 +177,7 @@ export async function loadClientFacts(
   };
 
   for (const row of latest) {
-    const fields = (row.fields ?? {}) as Record<string, unknown>;
+    const fields = openJson(row.fieldsEnc);
     const facts = upsert(row.clientId);
 
     if (row.templateKind === "CASE_MANAGEMENT" && fromSubmissions.includes("needs")) {

@@ -92,7 +92,7 @@ export async function createWhatsAppShare(
       submittedBy: { select: { fullName: true } },
       pages: {
         orderBy: { pageNumber: "asc" },
-        select: { pageNumber: true, verifiedText: true, ocrText: true },
+        select: { pageNumber: true, verifiedTextEnc: true, ocrTextEnc: true },
       },
     },
   });

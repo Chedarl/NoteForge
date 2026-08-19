@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
+import { openJson } from "@/lib/crypto/text";
 import { cleanText } from "@/lib/dedupe/normalize";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
 import type { Submission, TemplateKind } from "@prisma/client";
@@ -143,10 +144,10 @@ function stringFields(raw: unknown, kind: TemplateKind): Record<string, string> 
 export async function summariseChanges(
   submission: Pick<
     Submission,
-    "id" | "clientId" | "practiceId" | "encounterDate" | "templateKind" | "fields"
+    "id" | "clientId" | "practiceId" | "encounterDate" | "templateKind" | "fieldsEnc"
   >
 ): Promise<ChangeSummary> {
-  const statement = statementOf(submission.fields, submission.templateKind as TemplateKind);
+  const statement = statementOf(openJson(submission.fieldsEnc), submission.templateKind as TemplateKind);
 
   const previous = await prisma.submission.findFirst({
     where: {
@@ -198,8 +199,8 @@ export async function summariseChanges(
   // Both sides are read against the *current* submission's template. The
   // `comparable` gate above has already established they share one.
   const kind = submission.templateKind as TemplateKind;
-  const now = stringFields(submission.fields, kind);
-  const before = stringFields(previous.fields, kind);
+  const now = stringFields(openJson(submission.fieldsEnc), kind);
+  const before = stringFields(openJson(previous.fieldsEnc), kind);
 
   const fields: FieldChange[] = TEMPLATES[submission.templateKind as TemplateKind].fields
     .filter((field) => !field.excludeFromComparison)

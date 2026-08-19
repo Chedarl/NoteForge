@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { identityOf } from "@/lib/clients/identity";
+import { openJson, openText } from "@/lib/crypto/text";
 import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { TEMPLATES, renderFieldValue } from "@/lib/intake/templates";
 import { DISCIPLINE_LABEL } from "@/lib/intake/disciplines";
@@ -142,7 +143,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
         include: {
           submittedBy: { select: { fullName: true, discipline: true } },
           pages: { orderBy: { pageNumber: "asc" } },
-          flags: { where: { resolution: "OPEN" }, select: { kind: true, detail: true } },
+          flags: { where: { resolution: "OPEN" }, select: { kind: true, detailEnc: true } },
         },
       },
     },
@@ -166,7 +167,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
       birthYear: client.birthYear,
       status: STATUS_LABEL[client.status],
       statusSince: iso(client.statusChangedAt),
-      statusReason: client.statusReason,
+      statusReason: openText(client.statusReasonEnc),
       primaryClinician: client.primaryTherapist?.fullName ?? null,
       sessions: client.submissions.map((submission) => {
         // Discipline is read from the submission, which captured it at write
@@ -184,7 +185,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
          * silently, and only unzipping the result would have shown it.
          */
         const fields: Record<string, string> = {};
-        const raw = (submission.fields ?? {}) as Record<string, unknown>;
+        const raw = openJson(submission.fieldsEnc);
         for (const field of template.fields) {
           const rendered = renderFieldValue(raw[field.id], field);
           if (rendered) fields[field.id] = rendered;
@@ -193,7 +194,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
         const transcript =
           submission.kind === "PHOTO"
             ? submission.pages
-                .map((page) => page.verifiedText ?? "")
+                .map((page) => openText(page.verifiedTextEnc) ?? "")
                 .filter((t) => t.trim())
                 .join("\n\n") || null
             : null;
@@ -214,7 +215,7 @@ export async function buildExport(options: ExportOptions): Promise<ExportResult>
           submittedBy: submission.submittedBy.fullName,
           fields,
           transcript,
-          openFlags: submission.flags.map((f) => ({ kind: f.kind, detail: f.detail })),
+          openFlags: submission.flags.map((f) => ({ kind: f.kind, detail: openText(f.detailEnc) })),
         };
       }),
     };

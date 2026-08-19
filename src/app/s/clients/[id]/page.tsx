@@ -7,6 +7,7 @@ import StatusChanger from "@/components/therapist/StatusChanger";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { writeAudit } from "@/lib/audit";
 import { identityOf } from "@/lib/clients/identity";
+import { openText } from "@/lib/crypto/text";
 import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +77,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
       {client.status !== "ACTIVE" ? (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
           New notes are refused for this client since {fmtDate(client.statusChangedAt)}
-          {client.statusReason ? ` — ${client.statusReason}` : ""}. Everything below stays
+          {openText(client.statusReasonEnc) ? ` — ${openText(client.statusReasonEnc)}` : ""}. Everything below stays
           readable; that is deliberate, an inactive record is still an auditable one.
         </div>
       ) : null}
@@ -99,8 +100,8 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               <span className="text-xs text-slate-500">
                 {event.changedBy?.fullName ?? "system"}
               </span>
-              {event.reason ? (
-                <span className="w-full text-xs text-slate-600">{event.reason}</span>
+              {openText(event.reasonEnc) ? (
+                <span className="w-full text-xs text-slate-600">{openText(event.reasonEnc)}</span>
               ) : null}
             </Card>
           ))}

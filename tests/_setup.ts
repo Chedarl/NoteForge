@@ -13,6 +13,7 @@
  */
 import { randomBytes } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { sealText } from "@/lib/crypto/text";
 import type { Practice, User, Client, ClientStatus } from "@prisma/client";
 
 export interface Fixture {
@@ -69,7 +70,7 @@ export async function makeClient(
       clientCode,
       initials: "T.C.",
       status,
-      statusReason: status === "ACTIVE" ? null : "Set by a test",
+      statusReasonEnc: sealText(status) === "ACTIVE" ? null : "Set by a test",
       primaryTherapistId: therapistId,
     },
   });

@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { tokenize } from "@/lib/dedupe/normalize";
+import { openText, sealText } from "@/lib/crypto/text";
 import {
   compareTokens,
   DATE_PROXIMITY_DAYS,
@@ -49,7 +50,7 @@ export interface DetectionOutcome {
 
 type Candidate = Pick<
   Submission,
-  "id" | "normalizedText" | "rawText" | "encounterDate" | "contentHash" | "createdAt"
+  "id" | "normalizedTextEnc" | "rawTextEnc" | "encounterDate" | "contentHash" | "createdAt"
 >;
 
 export async function detectDuplicates(submission: Submission): Promise<DetectionOutcome> {
@@ -69,8 +70,8 @@ export async function detectDuplicates(submission: Submission): Promise<Detectio
     },
     select: {
       id: true,
-      normalizedText: true,
-      rawText: true,
+      normalizedTextEnc: true,
+      rawTextEnc: true,
       encounterDate: true,
       contentHash: true,
       createdAt: true,
@@ -100,13 +101,23 @@ export async function detectDuplicates(submission: Submission): Promise<Detectio
   }
 
   // ── Layers 2–3: token overlap over the candidate set ─────────────────────
-  const subjectTokens = tokenize(submission.rawText);
+  //
+  // Decrypted here, in memory, and this is the whole reason encrypting the note
+  // columns turned out to be tractable. `SECURITY.md` recorded this as blocked
+  // because "the duplicate detector searches the text" — it never did. The
+  // candidate query above filters on `clientId`, `state` and `encounterDate`,
+  // all indexed, and takes at most eight rows. Nothing is searched; eight values
+  // are opened and compared. That is microseconds, once per submission.
+  const subjectTokens = tokenize(openText(submission.rawTextEnc) ?? "");
   if (subjectTokens.length === 0) return { flags: [] };
 
   const scored = candidates
     .map((candidate) => ({
       candidate,
-      comparison: compareTokens(subjectTokens, tokenize(candidate.rawText)),
+      comparison: compareTokens(
+        subjectTokens,
+        tokenize(openText(candidate.rawTextEnc) ?? "")
+      ),
     }))
     .filter((s) => s.comparison.score >= NEAR_DUPLICATE_THRESHOLD)
     .sort((a, b) => b.comparison.score - a.comparison.score);
@@ -126,7 +137,19 @@ export async function detectDuplicates(submission: Submission): Promise<Detectio
     kimiConfigured() && best.comparison.score < OBVIOUS_DUPLICATE_THRESHOLD;
 
   if (worthClassifying) {
-    const verdict = await classifyPair(best.candidate.rawText, submission.rawText);
+    /*
+     * The one place decrypted note text leaves this process.
+     *
+     * Worth being explicit about now that the column is encrypted: layers 1–3
+     * are entirely local, and only this call — on the single best candidate
+     * pair, above a threshold, and only when a key is configured — sends
+     * clinical text to a model vendor. `AI_DISABLED=1` removes it; see
+     * `docs/BAA.md`.
+     */
+    const verdict = await classifyPair(
+      openText(best.candidate.rawTextEnc) ?? "",
+      openText(submission.rawTextEnc) ?? ""
+    );
     if (verdict) {
       if (verdict.verdict === "unrelated") {
         // The model saw the two documents and says the overlap is coincidence.
@@ -175,13 +198,28 @@ export async function persistFlags(
   outcome: DetectionOutcome
 ): Promise<void> {
   if (outcome.flags.length === 0) return;
+  /*
+   * `detailEnc`, and the compiler will not tell you if this is wrong.
+   *
+   * TypeScript's excess-property check does not fire on an object literal
+   * inside a `.map()`, so when the column was renamed this kept saying `detail`
+   * and compiled perfectly — silently dropping the explanation from every
+   * duplicate and contradiction flag. The queue would have filled with flags
+   * that said nothing about why they were raised, with lint, typecheck and
+   * build all green. Found by reading the file, not by a tool.
+   *
+   * The detail is sealed because it is clinical narrative: the classifier
+   * writes summaries like "the earlier submission records suicidal ideation
+   * denied on direct questioning", and the near-duplicate wording lists the
+   * clinical terms that are new.
+   */
   await prisma.submissionFlag.createMany({
     data: outcome.flags.map((flag) => ({
       submissionId,
       relatedSubmissionId: flag.relatedSubmissionId,
       kind: flag.kind,
       score: flag.score,
-      detail: flag.detail,
+      detailEnc: sealText(flag.detail),
     })),
   });
 }

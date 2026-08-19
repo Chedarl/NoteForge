@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { sealText, sealJson, openJson, openText } from "@/lib/crypto/text";
 import { requireRole } from "@/lib/auth/session";
 import { writeAudit } from "@/lib/audit";
 import { finishVerification } from "@/lib/intake/submit";
@@ -82,7 +83,7 @@ export async function saveVerification(
     transcripts.map(({ page, text }) =>
       prisma.submissionPage.update({
         where: { id: page.id },
-        data: { verifiedText: text, verifiedAt, verifiedById: user.id },
+        data: { verifiedTextEnc: sealText(text), verifiedAt, verifiedById: user.id },
       })
     )
   );
@@ -188,7 +189,12 @@ export async function ensureNote(submissionId: string) {
       templateKind: submission.templateKind,
       // Structured intake starts pre-filled with what the clinician wrote. There
       // is no reason to retype words that are already in their own voice.
-      body: (submission.kind === "STRUCTURED" ? submission.fields : {}) as object,
+      // Opened and re-sealed rather than copied across: the two columns are
+      // separate envelopes with their own IVs, and moving ciphertext between
+      // them would tie the note to the submission's key material for no reason.
+      bodyEnc: sealJson(
+        submission.kind === "STRUCTURED" ? openJson(submission.fieldsEnc) : {}
+      ) as unknown as Prisma.InputJsonObject,
       authoredById: user.id,
     },
   });
@@ -243,7 +249,7 @@ export async function saveNote(_prev: NoteState, formData: FormData): Promise<No
       await prisma.note.update({
         where: { id: submission.note.id },
         data: {
-          body: body as Prisma.InputJsonObject,
+          bodyEnc: sealJson(body) as unknown as Prisma.InputJsonObject,
           version: { increment: 1 },
           signedById: user.id,
           signedAt: new Date(),
@@ -253,7 +259,7 @@ export async function saveNote(_prev: NoteState, formData: FormData): Promise<No
       await prisma.note.update({
         where: { id: submission.note.id },
         data: {
-          body: body as Prisma.InputJsonObject,
+          bodyEnc: sealJson(body) as unknown as Prisma.InputJsonObject,
           state: "SIGNED",
           signedById: user.id,
           signedAt: new Date(),
@@ -282,7 +288,7 @@ export async function saveNote(_prev: NoteState, formData: FormData): Promise<No
 
   await prisma.note.update({
     where: { id: submission.note.id },
-    data: { body: body as Prisma.InputJsonObject },
+    data: { bodyEnc: sealJson(body) as unknown as Prisma.InputJsonObject },
   });
   return { saved: true };
 }
@@ -308,8 +314,8 @@ export async function proposeDraft(
 
   const source =
     submission.kind === "PHOTO"
-      ? submission.pages.map((p) => p.verifiedText ?? "").join("\n\n").trim()
-      : flattenFields(submission.templateKind as TemplateKind, submission.fields as Record<string, unknown>);
+      ? submission.pages.map((p) => openText(p.verifiedTextEnc) ?? "").join("\n\n").trim()
+      : flattenFields(submission.templateKind as TemplateKind, openJson(submission.fieldsEnc));
 
   if (!source) {
     return { error: "There is no verified source text to draft from yet." };

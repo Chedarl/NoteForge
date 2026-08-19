@@ -3,6 +3,7 @@ import "server-only";
 import { PDFDocument } from "pdf-lib";
 import { prisma } from "@/lib/prisma";
 import { identityOf } from "@/lib/clients/identity";
+import { openJson, openText } from "@/lib/crypto/text";
 import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { STATUS_LABEL } from "@/lib/clients/labels";
 import { TEMPLATES, renderFieldValue, encounterTypeOf } from "@/lib/intake/templates";
@@ -139,7 +140,7 @@ async function assembleSubmissionData(
       client: true,
       submittedBy: { select: { fullName: true, role: true, discipline: true } },
       pages: { orderBy: { pageNumber: "asc" } },
-      flags: { where: { resolution: "OPEN" }, select: { kind: true, detail: true } },
+      flags: { where: { resolution: "OPEN" }, select: { kind: true, detailEnc: true } },
       practice: { select: { name: true } },
     },
   });
@@ -148,7 +149,7 @@ async function assembleSubmissionData(
 
   const identity = identityOf(naming, submission.client);
   const template = TEMPLATES[submission.templateKind as TemplateKind];
-  const raw = (submission.fields ?? {}) as Record<string, unknown>;
+  const raw = openJson(submission.fieldsEnc);
 
   // `renderFieldValue` rather than a string check: a picker's answer is an
   // array and a severity field's is an object, and both used to print as
@@ -161,7 +162,7 @@ async function assembleSubmissionData(
   const transcript =
     submission.kind === "PHOTO"
       ? submission.pages
-          .map((page) => page.verifiedText ?? "")
+          .map((page) => openText(page.verifiedTextEnc) ?? "")
           .filter((text) => text.trim())
           .join("\n\n") || null
       : null;
@@ -188,7 +189,7 @@ async function assembleSubmissionData(
 
     clientStatus: STATUS_LABEL[submission.client.status],
     clientStatusSince: iso(submission.client.statusChangedAt),
-    clientStatusReason: submission.client.statusReason,
+    clientStatusReason: openText(submission.client.statusReasonEnc),
 
     encounterDate: iso(submission.encounterDate),
     encounterType,
@@ -205,7 +206,7 @@ async function assembleSubmissionData(
 
     sections,
     transcript,
-    openFlags: submission.flags.map((flag) => ({ kind: flag.kind, detail: flag.detail })),
+    openFlags: submission.flags.map((flag) => ({ kind: flag.kind, detail: openText(flag.detailEnc) })),
     changes,
     changeHeadline: changeHeadline(changes),
 

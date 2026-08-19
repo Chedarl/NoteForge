@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth/session";
 import IntakeForm from "@/components/therapist/IntakeForm";
 import { EmptyState } from "@/components/shared/ui";
 import { identityOf } from "@/lib/clients/identity";
+import { openText } from "@/lib/crypto/text";
 import { displayPolicyFor } from "@/lib/clients/displayPolicy";
 import { templatesFor } from "@/lib/intake/disciplines";
 import { practiceNeeds } from "@/lib/intake/practiceNeeds";
@@ -41,7 +42,7 @@ export default async function NewNotePage({
         clientCode: true,
         initials: true,
         status: true,
-        statusReason: true,
+        statusReasonEnc: true,
         statusChangedAt: true,
         givenNameEnc: true,
         familyInitial: true,
@@ -117,7 +118,7 @@ export default async function NewNotePage({
           clientCode: client.clientCode,
           label: identityOf(naming, client).displayName ?? client.initials,
           status: client.status,
-          statusReason: client.statusReason,
+          statusReason: openText(client.statusReasonEnc),
           statusChangedAt: client.statusChangedAt,
         }))}
         preselectedClientId={preselected ?? ""}

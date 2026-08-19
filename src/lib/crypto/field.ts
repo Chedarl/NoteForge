@@ -1,6 +1,7 @@
 import "server-only";
 
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
+import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { columnKey } from "@/lib/crypto/key";
 
 /**
  * Column-level encryption for the one genuinely identifying field this system
@@ -51,17 +52,14 @@ const IV_BYTES = 12; // 96 bits, the GCM standard
 const PREFIX = "v1";
 
 /**
- * Derives a 32-byte key from the configured secret.
+ * The key, now shared with `text.ts`.
  *
- * SHA-256 of the env value rather than a KDF with a work factor: this is a
- * high-entropy random secret from `openssl rand`, not a password, so stretching
- * buys nothing and would cost a hash on every row rendered.
+ * It moved to `crypto/key.ts` when clinical narrative started being encrypted
+ * with the same secret: two copies of a key derivation is how one of them
+ * quietly stops matching the other, and the symptom would be a whole column
+ * that no longer decrypts.
  */
-function key(): Buffer | null {
-  const secret = process.env.FIELD_ENCRYPTION_KEY;
-  if (!secret || secret.length < 32) return null;
-  return createHash("sha256").update(secret).digest();
-}
+const key = columnKey;
 
 export function fieldCryptoConfigured(): boolean {
   return key() !== null;
