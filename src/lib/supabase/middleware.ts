@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { DEV_AUTH_COOKIE, devAuthEnabled } from "@/lib/auth/devSession";
 
 /**
  * Refreshes the Supabase session cookie on every request and bounces anonymous
@@ -11,6 +12,29 @@ import { NextResponse, type NextRequest } from "next/server";
  * `requireRole`, server-side, on every page and route that matters.
  */
 export async function updateSession(request: NextRequest) {
+  const path = request.nextUrl.pathname;
+  const isProtected = ["/t", "/s", "/admin"].some(
+    (root) => path === root || path.startsWith(`${root}/`)
+  );
+
+  /*
+   * The development door, when it is open. Returns before the Supabase client
+   * exists, because the whole reason this path is here is a machine that cannot
+   * reach Supabase — constructing a client and awaiting `getUser()` would hang
+   * every request for the network timeout. `devAuthEnabled()` always returns
+   * false in production and on any deployment; see the note in `devSession.ts`.
+   */
+  if (devAuthEnabled()) {
+    const signedIn = Boolean(request.cookies.get(DEV_AUTH_COOKIE)?.value);
+    if (!signedIn && isProtected) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dev-signin";
+      url.searchParams.set("next", path);
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -35,11 +59,6 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const path = request.nextUrl.pathname;
-  const isProtected = ["/t", "/s", "/admin"].some(
-    (root) => path === root || path.startsWith(`${root}/`)
-  );
 
   if (!user && isProtected) {
     const url = request.nextUrl.clone();

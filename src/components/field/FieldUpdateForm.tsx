@@ -39,6 +39,23 @@ export default function FieldUpdateForm({
     {}
   );
 
+  /*
+   * What was typed or dictated, kept across a refused submit.
+   *
+   * React resets an uncontrolled form once its action completes, and this one
+   * is refused for ordinary reasons: a client the guardrail will not accept, a
+   * name the office cannot match, an update too short to be a record. Losing
+   * the text then is the worst version of this bug in the product — the person
+   * holding this page is standing outside somebody's house and has just spoken
+   * a paragraph into their phone, and re-dictating it from memory is not the
+   * same paragraph.
+   *
+   * `attempt` re-keys the two fields so their `defaultValue` is read again;
+   * `defaultValue` alone is only applied when a control mounts.
+   */
+  const [draft, setDraft] = useState({ clientName: "", update: "" });
+  const [attempt, setAttempt] = useState(0);
+
   const [listening, setListening] = useState(false);
   const [micNote, setMicNote] = useState<string | null>(null);
   const [supported, setSupported] = useState(false);
@@ -79,7 +96,18 @@ export default function FieldUpdateForm({
   const today = new Date().toISOString().slice(0, 10);
 
   return (
-    <form action={action} className="space-y-4">
+    <form
+      action={action}
+      onSubmit={(event) => {
+        const data = new FormData(event.currentTarget);
+        setDraft({
+          clientName: String(data.get("clientName") ?? ""),
+          update: String(data.get("update") ?? ""),
+        });
+        setAttempt((n) => n + 1);
+      }}
+      className="space-y-4"
+    >
       <input type="hidden" name="token" value={token} />
 
       <div>
@@ -87,10 +115,12 @@ export default function FieldUpdateForm({
           Who did you see?
         </label>
         <input
+          key={`clientName-${attempt}`}
           id="clientName"
           name="clientName"
           required
           autoComplete="off"
+          defaultValue={draft.clientName}
           placeholder="Smith J"
           className="nf-field"
         />
@@ -135,11 +165,13 @@ export default function FieldUpdateForm({
           ) : null}
         </div>
         <textarea
+          key={`update-${attempt}`}
           id="update"
           name="update"
           ref={box}
           required
           rows={7}
+          defaultValue={draft.update}
           placeholder="Met at the shelter. Reports sleeping better, still no ID. Denies SI/HI. Agreed to come to the clinic Thursday."
           className="nf-field mt-1 resize-y"
         />

@@ -164,6 +164,15 @@ inside it**. Conditional rendering would drop a section's answers the moment
 somebody collapsed it after typing, and it would look like the form losing work
 at random.
 
+**A refused submit must not wipe the form.** React resets an uncontrolled form
+once its action completes, which is right for one that succeeded and ruinous for
+one the server sent back — twenty fields lost along with the message naming the
+one that was empty. `IntakeForm` and `FieldUpdateForm` snapshot their answers on
+submit and re-key the field block, so `defaultValue` is read again on the
+remount. Any new form over a server action needs the same, and the field
+worker's page is the one where it matters most: that person is on a doorstep and
+has just spoken a paragraph into their phone.
+
 **Never put the `required` attribute on a control inside a section.** A
 `required` control inside a closed `<details>` makes the browser refuse the
 submit with "An invalid form control is not focusable" — nothing on screen
@@ -210,6 +219,36 @@ npm install
 npx prisma generate
 npm run dev
 ```
+
+### Running it signed in, without Supabase
+
+Supabase Auth is unreachable from a container behind an egress policy, which
+left the entire signed-in half of the product unopenable locally. You could
+type-check a form, render it to a string and file a submission from a script —
+and still not press the button.
+
+`DEV_AUTH=1` in `.env.local` turns on `/dev-signin`: a list of the seeded users,
+one click each. It sets a cookie holding an `authUserId` that already exists in
+the database, and `getSessionUser` looks it up exactly as it looks up the id
+Supabase would have returned. **Nothing downstream changes** — role checks,
+practice scoping, the status guardrail and the audit trail are all the real
+ones, which is the only reason a local run is worth anything.
+
+It cannot be switched on where it would matter. `NODE_ENV === "production"` and
+`VERCEL` are both checked before the opt-in, so a production build or any
+deployment answers 404 on that route and redirects to `/login` as before.
+`/api/health` reports `devAuth` so a deployment could say otherwise if it ever
+did. Verified both ways at runtime, not just asserted.
+
+A red banner sits on every page while it is on. That is deliberate: a screen
+reached through this door must never be mistakable for the real thing.
+
+**Use it.** Two of this codebase's worst bugs — an export that read "not
+recorded" everywhere, and a portal action pointing at a page with no microphone
+— survived a green lint, typecheck and build. A third, the form wiping twenty
+answers when the server refused one, survived all of that *plus* a suite of
+checks that drove the server action directly. It was found in a browser, in one
+click.
 
 ### Testing without Supabase
 
