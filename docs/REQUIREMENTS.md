@@ -181,7 +181,7 @@ PDF export optimised for human and AI consumption.
 | Full audit trail: who viewed, edited, exported what and when | **DONE** |
 | Mobile-responsive forms | **DONE** |
 | **Autosave of drafts** | **DONE** — on the device, not the server. It is offered back rather than restored silently, keyed by client and template so it can never be reattached to the wrong person, discarded after 24 hours, and cleared the moment the note is filed. A server-side draft would be clinical text about a named client stored before anybody decided it was a record, which is a bigger decision than "do not lose the form" |
-| **Mark a submission "Processed" and link it to the final note version** | **TO BUILD** |
+| **Mark a submission "Processed" and link it to the final note version** | **DONE** — `Submission.processedAt/By/NoteVersion/Ref`, marked by a named person on the note page and reversible. `DONE` only ever meant *a note was produced here*; this is the step that happens in Credible or ICANotes, where the practice cannot be asked "did you file it" by the system that produced it. A "Written, not filed" tab in the queue is the list of finished work nobody has confirmed reached its destination |
 
 ---
 

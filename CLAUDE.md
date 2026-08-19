@@ -267,6 +267,33 @@ Two bugs found here in a browser, both invisible to every other check:
   expects an array, so it silently restored nothing. The hook takes the set of
   list-valued field names from the caller, which is the only place that knows.
 
+## `DONE` is not the last step
+
+`Submission.state = DONE` means *a note was produced here*. It never meant
+anybody entered that note into Credible or ICANotes, and that last step happens
+somewhere this product cannot see — so from inside the system, a note that was
+filed and one that was forgotten looked identical. That is where work actually
+goes missing, and it is what a practice gets asked about when a claim comes
+back.
+
+`processedAt` / `processedById` / `processedNoteVersion` / `processedRef` record
+it, marked by a named person on the note page. Rule 3 applies with particular
+force here: nothing sets this automatically, because "was this actually filed"
+is the one question nobody should be able to answer on somebody else's behalf.
+
+Three details:
+
+- **Only a signed note can be filed.** Allowing it earlier would let somebody
+  mark work complete that no specialist has put their name to.
+- **It is reversible, and both directions are audited.** A one-way flag makes
+  people hesitate before using it at all, which produces a field nobody fills in
+  and therefore nobody trusts.
+- **The version is recorded** because a note corrected after signature bumps it,
+  and "which one did they get" has to have an answer.
+
+The `?tab=unfiled` queue is the operational question this exists for: finished
+work nobody has confirmed reached its destination.
+
 ## Conventions
 
 - **Server-only vs client-safe.** Anything touching the database, a key or a secret gets

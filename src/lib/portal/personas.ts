@@ -159,6 +159,27 @@ const QUICK: PortalAction = {
   icon: "pen",
 };
 
+/**
+ * Give a recovery coach or case worker a way in, from the dashboard.
+ *
+ * On every portal that supervises somebody, and that includes the nurse
+ * practitioner — she is *the* supervising clinician in this product. Field
+ * updates land in her review queue, `FieldLink.supervisorId` points at her, and
+ * the whole review chain was built around her reading them before they reach
+ * the people writing notes.
+ *
+ * It was missing from her dashboard while the case worker had it, which is
+ * backwards: the person who most needs to hand out a link had to know that
+ * "Team" in the nav was where links are made. A nav item is a filing cabinet;
+ * this is the thing you came to do.
+ */
+const SHARE_FIELD_LINK: PortalAction = {
+  href: "/t/team",
+  label: "Send a worker their link",
+  hint: "They send you updates from their phone — no account",
+  icon: "link",
+};
+
 export const PERSONAS: Record<PortalKind, PortalPersona> = {
   /*
    * Outdoors, one thumb, often no signal. Speaking is the fastest route to a
@@ -177,11 +198,7 @@ export const PERSONAS: Record<PortalKind, PortalPersona> = {
       hint: "Speak it or type it — one box",
       icon: "mic",
     },
-    secondaryActions: [
-      PHOTOGRAPH,
-      QUICK,
-      { href: "/t/team", label: "Send a worker their link", icon: "link" },
-    ],
+    secondaryActions: [PHOTOGRAPH, QUICK, SHARE_FIELD_LINK],
     nav: [
       { href: "/t", label: "Home" },
       { href: "/t/clients", label: "Clients" },
@@ -213,7 +230,7 @@ export const PERSONAS: Record<PortalKind, PortalPersona> = {
       hint: "Presentation · state · risk · medication",
       icon: "stethoscope",
     },
-    secondaryActions: [PHOTOGRAPH, QUICK],
+    secondaryActions: [PHOTOGRAPH, QUICK, SHARE_FIELD_LINK],
     nav: [
       { href: "/t", label: "Home" },
       { href: "/t/clients", label: "Caseload" },
@@ -276,7 +293,7 @@ export const PERSONAS: Record<PortalKind, PortalPersona> = {
       hint: "Choose a template first",
       icon: "notebook",
     },
-    secondaryActions: [PHOTOGRAPH, QUICK],
+    secondaryActions: [PHOTOGRAPH, QUICK, SHARE_FIELD_LINK],
     nav: [
       { href: "/t", label: "Clients" },
       { href: "/t/write", label: "Write" },
