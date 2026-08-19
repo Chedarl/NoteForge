@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient, BUCKET_EXPORTS } from "@/lib/supabase/admin";
 import { writeAudit } from "@/lib/audit";
+import { generatePasscode, hashPasscode, passcodeAvailable } from "@/lib/sharing/passcode";
 import { logSafe } from "@/lib/redact";
 import type { User } from "@prisma/client";
 
@@ -27,6 +28,11 @@ export interface StoredShare {
   token: string;
   expiresAt: Date;
   ttlHours: number;
+  /**
+   * The six digits, shown to the sender exactly once and never stored in
+   * readable form. Null when the link is bearer-only.
+   */
+  passcode: string | null;
 }
 
 export function shareTtlHours(): number {
@@ -43,11 +49,34 @@ export async function storeSharedPdf(args: {
   submissionId: string | null;
   /** Client codes or a count — never a name. Goes to the audit trail only. */
   auditLabel: string;
+  /**
+   * Whether the recipient must type a six-digit code before the PDF is
+   * released. See `passcode.ts` for why this exists rather than a longer URL.
+   *
+   * The caller decides because the caller knows what is in the document: a
+   * bundle carrying decrypted client names is a different object from one
+   * identified by practice code alone.
+   */
+  requirePasscode?: boolean;
 }): Promise<{ ok: true; share: StoredShare } | { ok: false; error: string }> {
   const { user, bytes, documentKind, submissionId, auditLabel } = args;
 
   const token = randomBytes(32).toString("base64url");
   const tokenHash = createHash("sha256").update(token).digest("hex");
+
+  /*
+   * Fail closed. A link that reports itself as protected while carrying no
+   * passcode is worse than one that was never offered, because the sender
+   * relaxes about where it goes.
+   */
+  if (args.requirePasscode && !passcodeAvailable()) {
+    return {
+      ok: false,
+      error:
+        "This deployment cannot lock a shared link with a code — CONFIRM_LINK_SECRET is not set. Download the PDF and hand it over yourself, or ask an administrator to set it.",
+    };
+  }
+  const passcode = args.requirePasscode ? generatePasscode() : null;
   const ttlHours = shareTtlHours();
   const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
@@ -94,6 +123,7 @@ export async function storeSharedPdf(args: {
         createdById: user.id,
         storagePath,
         expiresAt,
+        passcodeHash: passcode ? hashPasscode(tokenHash, passcode) : null,
       },
     });
     shareId = share.id;
@@ -118,10 +148,13 @@ export async function storeSharedPdf(args: {
     changes: {
       documentKind: { from: null, to: documentKind },
       expiresAt: { from: null, to: expiresAt.toISOString() },
+      // Recorded because "was that one locked?" is the first question asked
+      // about a link after the fact, and the code itself must never be here.
+      passcodeProtected: { from: null, to: passcode !== null },
     },
   });
 
-  return { ok: true, share: { token, expiresAt, ttlHours } };
+  return { ok: true, share: { token, expiresAt, ttlHours, passcode } };
 }
 
 /** The `wa.me` hand-off. A blank number makes WhatsApp offer its contact picker. */

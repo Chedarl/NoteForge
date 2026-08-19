@@ -9,5 +9,6 @@ export const EXPECTED_MIGRATIONS: readonly string[] = [
   "20260812130000_shareable_documents_beyond_submissions",
   "20260814200000_field_agent_links",
   "20260814230000_practice_needs",
-  "20260815090000_supervised_field_review"
+  "20260815090000_supervised_field_review",
+  "20260819120000_share_passcode"
 ];

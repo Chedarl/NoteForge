@@ -70,11 +70,19 @@ export interface SendDocumentInput {
 }
 
 /**
- * Meta's Cloud API needs two calls: upload the bytes, then send the id.
+ * Push the PDF itself into a chat. **Kept, but no longer the way anything sends.**
  *
- * There is no single-call form that takes a file, and the alternative — hosting
- * the PDF at a public URL for Meta to fetch — would mean an unauthenticated URL
- * serving clinical material, which is worse than the thing being worked around.
+ * Meta's Cloud API needs two calls: upload the bytes, then send the id. There is
+ * no single-call form that takes a file.
+ *
+ * Every caller now uses `sendLink` instead, because the bytes landing on Meta's
+ * infrastructure and in a phone's cloud backup is the part of this integration
+ * that cannot be bounded after the fact — a document sent this way has no
+ * expiry, no download ceiling and no way to be withdrawn. This function stays
+ * because the capability may be wanted for something genuinely non-clinical,
+ * and deleting it would only mean rewriting it worse later.
+ *
+ * If you are about to call this with a clinical PDF: use `sendLink`.
  */
 export async function sendDocument(input: SendDocumentInput): Promise<WhatsAppResult> {
   if (!whatsappConfigured()) {
@@ -142,6 +150,81 @@ export async function sendDocument(input: SendDocumentInput): Promise<WhatsAppRe
   } catch (error) {
     logSafe("whatsapp", "send threw", {
       filename: input.filename,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { ok: false, reason: "failed", detail: "network" };
+  }
+}
+
+export interface SendLinkInput {
+  to: string;
+  /** The `/share/<token>` URL. Never a direct link to the bytes. */
+  url: string;
+  /** Client codes and a date. Never note text — see the note at the top. */
+  lead: string;
+}
+
+/**
+ * Send the *link*, not the document. This is now the default handoff.
+ *
+ * Pushing the PDF itself through `sendDocument` put clinical material onto
+ * Meta's infrastructure, into a chat history, and into whatever cloud backup
+ * that phone has switched on — permanently, with no expiry, no download
+ * ceiling, and no way to withdraw it. None of that is covered by an agreement
+ * with anybody.
+ *
+ * A link is a different shape of risk in every dimension that matters. The
+ * bytes stay in the practice's own bucket. The link expires, counts its
+ * downloads, can be withdrawn after the fact, and — when the document carries
+ * names — cannot be opened at all without a code that never travelled through
+ * WhatsApp. What sits in the chat backup is a URL that has since stopped
+ * working.
+ *
+ * The recipient's experience barely changes: one tap instead of none, onto a
+ * page that tells them what they have been sent. That is a cheap price for
+ * moving the clinical payload off a channel nobody will sign for.
+ */
+export async function sendLink(input: SendLinkInput): Promise<WhatsAppResult> {
+  if (!whatsappConfigured()) {
+    logSafe("whatsapp", "not configured — link not sent");
+    return { ok: false, reason: "not_configured" };
+  }
+
+  const to = toGraphNumber(input.to);
+  if (!to) return { ok: false, reason: "no_number" };
+
+  try {
+    const send = await fetch(
+      `https://graph.facebook.com/${GRAPH_VERSION}/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          recipient_type: "individual",
+          to,
+          type: "text",
+          // Preview off: a preview makes Meta fetch the URL, and a fetched
+          // share URL is a link somebody else's server has now seen.
+          text: { preview_url: false, body: `${input.lead}\n\n${input.url}` },
+        }),
+      }
+    );
+
+    if (!send.ok) {
+      logSafe("whatsapp", `link send failed (${send.status})`);
+      return { ok: false, reason: "failed", detail: `send ${send.status}` };
+    }
+
+    const body = (await send.json()) as { messages?: { id: string }[] };
+    const messageId = body.messages?.[0]?.id;
+    if (!messageId) return { ok: false, reason: "failed", detail: "no message id" };
+    return { ok: true, messageId };
+  } catch (error) {
+    logSafe("whatsapp", "link send threw", {
       error: error instanceof Error ? error.message : String(error),
     });
     return { ok: false, reason: "failed", detail: "network" };

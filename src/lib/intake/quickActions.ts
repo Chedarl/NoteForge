@@ -6,7 +6,9 @@ import { requireRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { submitEncounter } from "@/lib/intake/submit";
 import { buildSubmissionPdf, buildBatchPdf } from "@/lib/export/submissionPdf";
-import { sendDocument, sendFailureMessage, whatsappConfigured } from "@/lib/whatsapp/send";
+import { sendLink, sendFailureMessage, whatsappConfigured } from "@/lib/whatsapp/send";
+import { storeSharedPdf, whatsappHandoff } from "@/lib/sharing/store";
+import { siteUrl } from "@/lib/email/send";
 import { normalizeWhatsAppNumber } from "@/lib/sharing/phone";
 import { writeAudit } from "@/lib/audit";
 import { logSafe } from "@/lib/redact";
@@ -57,6 +59,11 @@ export interface QuickBatchState {
     downloadIds: string[];
     whatsapp: { sent: boolean; message: string } | null;
     identifiable: boolean;
+    /**
+     * The six digits the recipient will be asked for, shown once here and
+     * nowhere else. Null when the document went out unlocked.
+     */
+    passcode: string | null;
   };
 }
 
@@ -174,7 +181,12 @@ export async function submitQuickBatch(
   revalidatePath("/t");
 
   if (submissionIds.length === 0) {
-    return { success: { filed, refused, filename: null, downloadIds: [], whatsapp: null, identifiable: false } };
+    return {
+      success: {
+        filed, refused, filename: null, downloadIds: [],
+        whatsapp: null, identifiable: false, passcode: null,
+      },
+    };
   }
 
   /*
@@ -260,13 +272,51 @@ export async function submitQuickBatch(
     }
   }
 
+  /*
+   * The document is stored and a *link* is sent, rather than the PDF being
+   * pushed into the chat.
+   *
+   * The bytes stay in the practice's bucket, where the link expires, counts its
+   * downloads and can be withdrawn. What ends up in a WhatsApp backup is a URL
+   * that has since stopped working, instead of a clinical PDF that never will.
+   *
+   * A round carrying decrypted client names is locked with a code and there is
+   * no way to opt out of that: names in a chat backup are the worst version of
+   * this and the one thing no agreement covers.
+   */
   let whatsapp: { sent: boolean; message: string } | null = null;
+  let passcode: string | null = null;
+
+  const stored = await storeSharedPdf({
+    user,
+    bytes: new Uint8Array(batch.pdf),
+    documentKind: submissionIds.length === 1 ? "submission" : "round",
+    submissionId: submissionIds[0],
+    auditLabel: batch.clientCodes.join(", "),
+    requirePasscode: batch.identifiable,
+  });
+
+  if (!stored.ok) {
+    return {
+      error: `${stored.error} The updates themselves are filed and safe.`,
+    };
+  }
+  passcode = stored.share.passcode;
+
+  const { whatsappUrl, downloadUrl } = whatsappHandoff({
+    phone: destination,
+    siteUrl: siteUrl(),
+    token: stored.share.token,
+    ttlHours: stored.share.ttlHours,
+    lead: `${batch.clientCodes.length} client update${batch.clientCodes.length === 1 ? "" : "s"} for note production, ${encounterDate.toISOString().slice(0, 10)}.`,
+  });
+  void whatsappUrl;
+
   if (whatsappConfigured()) {
-    const sent = await sendDocument({
+    const sent = await sendLink({
       to: destination ?? "",
-      pdf: batch.pdf,
-      filename: batch.filename,
-      caption: `${batch.clientCodes.length} client updates · ${encounterDate.toISOString().slice(0, 10)}`,
+      url: downloadUrl,
+      lead: `${batch.clientCodes.length} client update${batch.clientCodes.length === 1 ? "" : "s"} for note production, ${encounterDate.toISOString().slice(0, 10)}. The link expires in ${stored.share.ttlHours} hours.${passcode ? " You will be asked for a code — it is being sent to you separately." : ""}`,
     });
 
     await writeAudit({
@@ -284,6 +334,10 @@ export async function submitQuickBatch(
         identifiable: { from: null, to: batch.identifiable },
         clients: { from: null, to: batch.clientCodes.join(", ") },
         outcome: { from: null, to: sent.ok ? "sent" : sent.reason },
+        // What went out was a link, not the document. Worth recording, because
+        // "was the PDF itself ever in a chat" is a question an audit will ask.
+        delivery: { from: null, to: "link" },
+        passcodeProtected: { from: null, to: passcode !== null },
       },
     });
 
@@ -300,6 +354,7 @@ export async function submitQuickBatch(
       downloadIds: submissionIds,
       whatsapp,
       identifiable: batch.identifiable,
+      passcode,
     },
   };
 }

@@ -558,6 +558,24 @@ model ShareLink {
   expiresAt   DateTime
   revokedAt   DateTime?
 
+  /// HMAC of a six-digit code the recipient must type before the document is
+  /// released. Null means the link is bearer-only, as every link was before.
+  ///
+  /// This is what stops possession of a WhatsApp message from being the same
+  /// thing as access to the note. Meta signs no BAA, a chat lives in backups
+  /// and on a device somebody else may pick up, and the whole defence used to
+  /// be "the URL is hard to guess" — which says nothing about a URL that was
+  /// handed over. The code travels by a different route: spoken, or in another
+  /// app. Bound to this link's token hash, so the same code on two links does
+  /// not produce the same stored value.
+  passcodeHash     String?
+  /// Wrong guesses so far. Six digits is only a million, so the ceiling below
+  /// is doing the real work rather than the length of the code.
+  passcodeAttempts Int       @default(0)
+  /// Set when the attempt ceiling is hit. Locked is permanent for that link —
+  /// mint a new one. A lockout that expires is a lockout an attacker waits out.
+  passcodeLockedAt DateTime?
+
   downloadCount    Int       @default(0)
   maxDownloads     Int       @default(10)
   lastDownloadedAt DateTime?

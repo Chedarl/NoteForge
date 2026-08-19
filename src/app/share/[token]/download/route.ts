@@ -1,4 +1,6 @@
 import { createHash } from "crypto";
+import { cookies } from "next/headers";
+import { unlockCookieName, unlockMatches } from "@/lib/sharing/passcode";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient, BUCKET_EXPORTS } from "@/lib/supabase/admin";
@@ -69,6 +71,30 @@ export async function GET(
    * recipient ever tapped it. Viewing the landing page is free; arriving here is
    * a deliberate act.
    */
+  /*
+   * The code is checked here as well as on the landing page, and that is the
+   * half that matters.
+   *
+   * The page is a courtesy — it explains what the document is and asks nicely.
+   * This route is the door. A recipient who kept the `/download` URL from last
+   * week, or who read it out of a chat and typed it directly, never sees the
+   * page at all, so a gate that lived only there would be decoration.
+   *
+   * Two reads rather than one: the passcode state is fetched before the atomic
+   * claim, so a locked link does not spend a download on being refused.
+   */
+  const guard = await prisma.shareLink.findUnique({
+    where: { tokenHash },
+    select: { passcodeHash: true, passcodeLockedAt: true },
+  });
+  if (guard?.passcodeLockedAt) return unavailable();
+  if (guard?.passcodeHash) {
+    const jar = await cookies();
+    if (!unlockMatches(tokenHash, jar.get(unlockCookieName(tokenHash))?.value)) {
+      return unavailable();
+    }
+  }
+
   const rows = await prisma.$queryRaw<ClaimedShare[]>(Prisma.sql`
     UPDATE "ShareLink"
     SET "downloadCount" = "downloadCount" + 1,
